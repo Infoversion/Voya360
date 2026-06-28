@@ -5,6 +5,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    }
-  }
+    },
+    "ignoreDeprecations": "6.0",
+    "types": ["jest"]
+  },
+  "exclude": ["node_modules"]
 }
