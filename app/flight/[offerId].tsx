@@ -195,7 +195,7 @@ export default function FlightReviewScreen() {
   const taxAmount      = parseFloat(offer.tax_amount ?? '0');
   const totalAmount    = baseFare + taxAmount + SERVICE_FEE_USD + baggageFee;
 
-  // Vayo baggage tip
+  // Voya baggage tip
   const bagTip = extraBags > 0
     ? {
         headline: 'Add bags now — it\'s cheaper',

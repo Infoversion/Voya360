@@ -10,17 +10,6 @@ export type VoyaObservationType =
 
 export type VoyaScreen = 'home' | 'results' | 'review' | 'passengers' | 'confirm' | 'post_booking';
 
-export const VOYA_SCREEN_MAP: Record<VoyaObservationType, VoyaScreen> = {
-  corridor_opportunity:    'home',
-  day_of_week_saving:      'results',
-  seasonal_demand:         'results',
-  fastest_route:           'results',
-  baggage_comparison:      'review',
-  hidden_passenger_saving: 'passengers',
-  booking_validation:      'confirm',
-  post_booking_tip:        'post_booking',
-};
-
 export interface VoyaObservation {
   id:        string;
   type:      VoyaObservationType;
@@ -30,3 +19,14 @@ export interface VoyaObservation {
   priority:  number;
   dismissed: boolean;
 }
+
+export const VOYA_SCREEN_MAP: Record<VoyaObservationType, VoyaScreen> = {
+  corridor_opportunity:    'home',
+  day_of_week_saving:      'results',
+  baggage_comparison:      'review',
+  seasonal_demand:         'results',
+  hidden_passenger_saving: 'passengers',
+  fastest_route:           'results',
+  booking_validation:      'confirm',
+  post_booking_tip:        'post_booking',
+};

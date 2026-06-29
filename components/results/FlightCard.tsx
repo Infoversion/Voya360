@@ -166,7 +166,7 @@ interface Props {
   isCheapest?:         boolean;
   isFastest?:          boolean;
   isPreferredAirline?: boolean;
-  isVayoPick?:         boolean;
+  isVoyaPick?:         boolean;
   preferredAirlines?:  string[];
   avoidedAirports?:    string[];
   showSliceIndex?:     number;   // show only this slice (for two-step selection)
@@ -175,7 +175,7 @@ interface Props {
 
 export function FlightCard({
   offer, bagCount, trend = 'stable',
-  isCheapest, isFastest, isPreferredAirline, isVayoPick,
+  isCheapest, isFastest, isPreferredAirline, isVoyaPick,
   preferredAirlines = [], avoidedAirports = [],
   showSliceIndex, onPress,
 }: Props) {
@@ -215,9 +215,9 @@ export function FlightCard({
       }}
     >
       {/* Smart badges */}
-      {(isCheapest || isFastest || isPreferredAirline || isVayoPick) && (
+      {(isCheapest || isFastest || isPreferredAirline || isVoyaPick) && (
         <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
-          {isVayoPick         && <SmartBadge type="vayo_pick" />}
+          {isVoyaPick         && <SmartBadge type="voya_pick" />}
           {isCheapest         && <SmartBadge type="cheapest" />}
           {isFastest          && <SmartBadge type="fastest" />}
           {isPreferredAirline && <SmartBadge type="preferred_airline" />}

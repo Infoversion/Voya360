@@ -11,6 +11,7 @@ import { VoyaCard }       from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
 import { usePriceHistory } from '@/hooks/usePriceHistory';
 import { calculateCost }   from '@/engine/total-cost';
+import { getActiveEvents } from '@/engine/seasonal-events';
 import { colors, fontSize, spacing } from '@/constants/design';
 import type { DuffelOffer } from '@/types/duffel';
 
@@ -117,6 +118,11 @@ export default function ResultsScreen() {
     return null;
   }, [allOffers, bagCount, sortMode, mode]);
 
+  const seasonalEvents = useMemo(() => {
+    if (!destination?.iata || !departureDate) return [];
+    return getActiveEvents(destination.iata, new Date(departureDate + 'T00:00:00'));
+  }, [destination?.iata, departureDate]);
+
   const depDate = departureDate
     ? new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
@@ -214,7 +220,7 @@ export default function ResultsScreen() {
           paddingHorizontal: spacing.pagePadding, paddingVertical: 10, gap: 8,
         }}>
           {([
-            { value: 'bundled',  label: 'Vayo\'s picks' },
+            { value: 'bundled',  label: "Voya's picks" },
             { value: 'stepwise', label: 'Choose separately' },
           ] as { value: SelectionMode; label: string }[]).map(opt => {
             const active = mode === opt.value;
@@ -318,6 +324,39 @@ export default function ResultsScreen() {
 
       {/* ── Filter bar ── */}
       <FilterBar />
+
+      {/* ── Seasonal demand banner ── */}
+      {seasonalEvents.length > 0 && (() => {
+        const event = seasonalEvents[0];
+        const veryHigh = event.demandLevel === 'very_high';
+        return (
+          <View style={{
+            marginHorizontal: spacing.pagePadding, marginTop: 10,
+            backgroundColor: veryHigh ? '#FFF1F2' : '#FFFBEB',
+            borderRadius: 12,
+            borderWidth: 1.5,
+            borderColor: veryHigh ? '#FECDD3' : '#FDE68A',
+            padding: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}>
+            <Text style={{ fontSize: 20 }}>{veryHigh ? '🔥' : '📈'}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: veryHigh ? '#BE123C' : colors.warning }}>
+                {event.daysUntil === 0
+                  ? `${event.name} travel window — book now`
+                  : `${event.name} in ${event.daysUntil} days — prices rising`}
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                {veryHigh
+                  ? 'Very high demand on this route. Fares typically peak 3–4 weeks before.'
+                  : 'High demand period. Fares are likely to increase as the date approaches.'}
+              </Text>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* ── Voya insight ── */}
       {observation && (
@@ -466,7 +505,7 @@ export default function ResultsScreen() {
               onPress={() => handleCardPress(item)}
               isCheapest={item.id === cheapestOffer?.id && mode === 'bundled'}
               isFastest={item.id === fastestOffer?.id && mode === 'bundled'}
-              isVayoPick={mode === 'bundled' && isRoundTrip && index === 0}
+              isVoyaPick={mode === 'bundled' && isRoundTrip && index === 0}
               isPreferredAirline={item.slices[0]?.segments.some(
                 (s: { marketing_carrier: { iata_code: string } }) => preferredAirlines.includes(s.marketing_carrier.iata_code),
               )}
