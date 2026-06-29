@@ -104,3 +104,17 @@ export interface OrderResult {
 export async function createOrder(params: CreateOrderParams): Promise<OrderResult> {
   return proxyCall<OrderResult>('order_create', params as unknown as Record<string, unknown>);
 }
+
+export interface InitiateBookingParams {
+  offerId:    string;
+  passengers: OrderPassengerPayload[];
+  bagCount:   number;
+}
+
+export type InitiateBookingResult =
+  | { mode: 'stripe';   clientSecret: string; intentId: string }
+  | { mode: 'sandbox';  orderId: string; pnr: string };
+
+export async function initiateBooking(params: InitiateBookingParams): Promise<InitiateBookingResult> {
+  return proxyCall<InitiateBookingResult>('booking_initiate', params as unknown as Record<string, unknown>);
+}

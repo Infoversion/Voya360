@@ -50,8 +50,9 @@ export interface Booking {
   service_fee_usd:  number;
   baggage_fee_usd:  number;
   total_usd:        number | null;
-  e_ticket_url:     string | null;
-  created_at:       string;
+  e_ticket_url:               string | null;
+  stripe_payment_intent_id:   string | null;
+  created_at:                 string;
 }
 
 export interface BookingPassenger {
