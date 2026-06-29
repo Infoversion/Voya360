@@ -6,11 +6,11 @@ import { DuffelOffer, DuffelSegment } from '@/types/duffel';
 import { useSearchStore }  from '@/store/search.store';
 import { useBookingStore } from '@/store/booking.store';
 import { getOffer }        from '@/lib/duffel';
-import { PriceSummary }    from '@/components/booking/PriceSummary';
+import { Button }          from '@/components/ui/Button';
 import { BaggageAddons }  from '@/components/booking/BaggageAddons';
 import { VoyaCard }        from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
-import { formatDuration, getIncludedCheckedBags } from '@/engine/total-cost';
+import { formatDuration, getIncludedCheckedBags, getFareType } from '@/engine/total-cost';
 import { SERVICE_FEE_USD } from '@/types/booking';
 import { colors, fontSize, spacing } from '@/constants/design';
 
@@ -186,6 +186,7 @@ export default function FlightReviewScreen() {
   }
 
   const isRoundTrip    = offer.slices.length > 1;
+  const fareType       = getFareType(offer);
   const refund         = offer.conditions?.refund_before_departure;
   const change         = offer.conditions?.change_before_departure;
   const includedBags   = getIncludedCheckedBags(offer);
@@ -218,13 +219,13 @@ export default function FlightReviewScreen() {
         backgroundColor: colors.background,
       }}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ fontSize: 22, color: colors.accent }}>←</Text>
+          <Text style={{ fontSize: 24, fontWeight: '900', color: colors.accent }}>←</Text>
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>Review your trip</Text>
           <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>Step 1 of 3 · Confirm details before paying</Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} resizeMode="cover" />
+        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
@@ -393,7 +394,7 @@ export default function FlightReviewScreen() {
                   Added baggage · {extraBags} bag{extraBags > 1 ? 's' : ''} (est.)
                 </Text>
                 <Text style={{ fontSize: fontSize.label, fontWeight: '600', color: colors.warning }}>
-                  ~${baggageFee.toFixed(2)}
+                  +${baggageFee.toFixed(2)}
                 </Text>
               </View>
             )}
@@ -419,27 +420,38 @@ export default function FlightReviewScreen() {
           backgroundColor: colors.background,
           borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
         }}>
-          <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <View style={{
+            paddingHorizontal: 14, paddingVertical: 10,
+            borderBottomWidth: 1, borderBottomColor: colors.border,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          }}>
             <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>FARE CONDITIONS</Text>
+            <View style={{ backgroundColor: fareType.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: fareType.color }}>{fareType.label}</Text>
+            </View>
           </View>
           <View style={{ padding: 14, flexDirection: 'row', gap: 16 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 3 }}>Refundable</Text>
-              <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: refund?.allowed ? colors.success : '#DC2626' }}>
-                {refund?.allowed ? '✓ Yes' : '✗ No'}
+            <View style={{ flex: 1, backgroundColor: fareType.refundable ? '#F0FDF4' : '#FEF2F2', borderRadius: 10, padding: 12 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.4, marginBottom: 4 }}>REFUNDABLE</Text>
+              <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: fareType.refundable ? colors.success : '#DC2626' }}>
+                {fareType.refundable ? '✓ Yes' : '✗ No'}
               </Text>
-              {refund?.penalty_amount && (
-                <Text style={{ fontSize: 11, color: colors.textMuted }}>${refund.penalty_amount} fee</Text>
-              )}
+              {fareType.refundFee ? (
+                <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>${fareType.refundFee} penalty</Text>
+              ) : fareType.refundable ? (
+                <Text style={{ fontSize: 11, color: colors.success, marginTop: 3 }}>No penalty</Text>
+              ) : null}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 3 }}>Changeable</Text>
-              <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: change?.allowed ? colors.success : '#DC2626' }}>
-                {change?.allowed ? '✓ Yes' : '✗ No'}
+            <View style={{ flex: 1, backgroundColor: fareType.changeable ? '#F0FDF4' : '#FEF2F2', borderRadius: 10, padding: 12 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.4, marginBottom: 4 }}>CHANGEABLE</Text>
+              <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: fareType.changeable ? colors.success : '#DC2626' }}>
+                {fareType.changeable ? '✓ Yes' : '✗ No'}
               </Text>
-              {change?.penalty_amount && (
-                <Text style={{ fontSize: 11, color: colors.textMuted }}>${change.penalty_amount} fee</Text>
-              )}
+              {fareType.changeFee ? (
+                <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>${fareType.changeFee} penalty</Text>
+              ) : fareType.changeable ? (
+                <Text style={{ fontSize: 11, color: colors.success, marginTop: 3 }}>No penalty</Text>
+              ) : null}
             </View>
           </View>
         </View>
@@ -457,14 +469,10 @@ export default function FlightReviewScreen() {
             </Text>
           </View>
         )}
+        <View style={{ paddingHorizontal: spacing.pagePadding, paddingTop: 16, paddingBottom: 8 }}>
+          <Button label="Continue to passengers" large onPress={() => router.push('/booking/passengers')} />
+        </View>
       </ScrollView>
-
-      <PriceSummary
-        offer={offer}
-        bagCount={bagCount}
-        label="Continue to passengers"
-        onPress={() => router.push('/booking/passengers')}
-      />
     </SafeAreaView>
   );
 }

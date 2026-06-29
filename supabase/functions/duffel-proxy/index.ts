@@ -161,7 +161,7 @@ serve(async (req) => {
         // Use sandbox balance payment when Duffel Payments isn't enabled yet.
         const payments = DUFFEL_PAYMENTS_ENABLED && paymentIntentId !== 'sandbox_skip'
           ? [{ type: 'payment_intent', id: paymentIntentId }]
-          : [{ type: 'balance' }];
+          : [{ type: 'balance', amount: offer.total_amount, currency: offer.total_currency }];
 
         result = await duffel('POST', '/air/orders', {
           type:       'instant',
@@ -225,7 +225,11 @@ serve(async (req) => {
             type:            'instant',
             selected_offers: [offerId],
             passengers:      duffelPassengers,
-            payments:        [{ type: 'balance' }],
+            payments:        [{
+              type:     'balance',
+              amount:   offer.total_amount,
+              currency: offer.total_currency,
+            }],
           });
 
           const baseFare   = parseFloat(offer.total_amount ?? '0');

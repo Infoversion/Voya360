@@ -199,12 +199,20 @@ export default function ResultsScreen() {
         flexDirection: 'row', alignItems: 'center', gap: 12,
       }}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ fontSize: 22, color: colors.accent }}>←</Text>
+          <Text style={{ fontSize: 24, fontWeight: '900', color: colors.accent }}>←</Text>
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>
-            {origin?.iata} → {destination?.iata}{isRoundTrip ? ` → ${origin?.iata}` : ''}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{origin?.iata}</Text>
+            <Text style={{ fontSize: 14, color: '#1E3A8A' }}>✈</Text>
+            <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{destination?.iata}</Text>
+            {isRoundTrip && (
+              <>
+                <Text style={{ fontSize: 14, color: '#1E3A8A', transform: [{ scaleX: -1 }] }}>✈</Text>
+                <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{origin?.iata}</Text>
+              </>
+            )}
+          </View>
           <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
             {depDate}{retDate ? ` – ${retDate}` : ''} · {paxSummary} · {cabinClass}
           </Text>
@@ -365,15 +373,24 @@ export default function ResultsScreen() {
         </View>
       )}
 
-      {/* ── Results count ── */}
+      {/* ── Results count + jump to last ── */}
       {displayOffers.length > 0 && (
-        <View style={{ paddingHorizontal: spacing.pagePadding, paddingVertical: 8 }}>
-          <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
+        <View style={{ paddingHorizontal: spacing.pagePadding, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: fontSize.label, color: colors.textMuted, flex: 1 }}>
             {displayOffers.length} {mode === 'stepwise' && step === 1 ? 'outbound' : mode === 'stepwise' && step === 2 ? 'return' : ''} flight{displayOffers.length !== 1 ? 's' : ''} · <Text style={{ color: colors.accent, fontWeight: '600' }}>
               {sortMode === 'total' ? 'Total you pay' : sortMode === 'duration' ? 'Shortest time' : 'Departure time'}
               {sortDirection === 'asc' ? ' ↑' : ' ↓'}
             </Text>
           </Text>
+          {displayOffers.length > 3 && (
+            <TouchableOpacity
+              onPress={() => listRef.current?.scrollToEnd({ animated: true })}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 10 }}
+            >
+              <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600' }}>Jump to last</Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted }}>↓</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -478,24 +495,28 @@ export default function ResultsScreen() {
               )}
             </View>
           ) : null}
-          ListHeaderComponent={baggageFlipPair ? (
-            <View style={{
-              marginHorizontal: spacing.pagePadding, marginBottom: 8,
-              backgroundColor: `${colors.accent}10`,
-              borderRadius: 12, borderLeftWidth: 3, borderLeftColor: colors.accent,
-              padding: 12,
-            }}>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, letterSpacing: 0.5, marginBottom: 3 }}>
-                VOYA · BAG PICK
-              </Text>
-              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
-                {baggageFlipPair.airline} is ${baggageFlipPair.priceDiff} more — but includes {baggageFlipPair.bagDiff} free bag{baggageFlipPair.bagDiff > 1 ? 's' : ''}
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                After bags, it's the cheaper option. That's why we ranked it first.
-              </Text>
+          ListHeaderComponent={(
+            <View>
+              {baggageFlipPair && (
+                <View style={{
+                  marginHorizontal: spacing.pagePadding, marginBottom: 8,
+                  backgroundColor: `${colors.accent}10`,
+                  borderRadius: 12, borderLeftWidth: 3, borderLeftColor: colors.accent,
+                  padding: 12,
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, letterSpacing: 0.5, marginBottom: 3 }}>
+                    VOYA · BAG PICK
+                  </Text>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
+                    {baggageFlipPair.airline} is ${baggageFlipPair.priceDiff} more — but includes {baggageFlipPair.bagDiff} free bag{baggageFlipPair.bagDiff > 1 ? 's' : ''}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                    After bags, it's the cheaper option. That's why we ranked it first.
+                  </Text>
+                </View>
+              )}
             </View>
-          ) : null}
+          )}
           renderItem={({ item, index }) => (
             <FlightCard
               offer={item}
@@ -511,26 +532,12 @@ export default function ResultsScreen() {
               )}
               preferredAirlines={preferredAirlines}
               avoidedAirports={avoidedAirports}
+              index={index}
+              total={displayOffers.length}
             />
           )}
         />
 
-        {/* ── Floating ↓ jump to bottom ── */}
-        {displayOffers.length > 3 && (
-          <TouchableOpacity
-            onPress={() => listRef.current?.scrollToEnd({ animated: true })}
-            style={{
-              position: 'absolute', bottom: 40, right: 16,
-              width: 40, height: 40, borderRadius: 20,
-              backgroundColor: colors.accent,
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6,
-              shadowOffset: { width: 0, height: 2 }, elevation: 4,
-            }}
-          >
-            <Text style={{ fontSize: 18, color: '#fff', lineHeight: 22 }}>↓</Text>
-          </TouchableOpacity>
-        )}
       </View>
     </SafeAreaView>
   );

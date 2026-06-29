@@ -8,7 +8,11 @@ async function proxyCall<T>(action: string, payload: Record<string, unknown>): P
   const { data, error } = await supabase.functions.invoke('duffel-proxy', {
     body: { action, ...payload },
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Extract the actual error message from the function response body
+    const body = await (error as any).context?.json?.().catch?.(() => null);
+    throw new Error(body?.error ?? error.message);
+  }
   if (data?.error) throw new Error(data.error);
   return data.data as T;
 }

@@ -1,15 +1,18 @@
 import { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Input } from '@/components/ui/Input';
 import { DietaryRow } from '@/components/booking/DietaryRow';
 import { PassengerInput, PassengerType } from '@/store/booking.store';
 import { SavedTraveler, DietaryPreference } from '@/types/booking';
 import { colors, fontSize } from '@/constants/design';
 
-const TYPE_LABEL: Record<PassengerType, { title: string; icon: string; note?: string }> = {
-  adult:               { title: 'Adult',   icon: '🧑' },
-  child:               { title: 'Child',   icon: '🧒', note: 'Ages 2–11' },
-  infant_without_seat: { title: 'Infant',  icon: '👶', note: 'Under 2 · sits on lap · uses parent\'s contact' },
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const TYPE_LABEL: Record<PassengerType, { title: string; ionicon: IoniconName; note?: string }> = {
+  adult:               { title: 'Adult',   ionicon: 'person-outline' },
+  child:               { title: 'Child',   ionicon: 'body-outline',  note: 'Ages 2–11' },
+  infant_without_seat: { title: 'Infant',  ionicon: 'happy-outline', note: 'Under 2 · sits on lap · uses parent\'s contact' },
 };
 
 interface Props {
@@ -92,7 +95,7 @@ export function PassengerForm({ passenger, index, savedTravelers, onChange }: Pr
     }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-        <Text style={{ fontSize: 22 }}>{typeInfo.icon}</Text>
+        <Ionicons name={typeInfo.ionicon} size={22} color={colors.textMuted} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>
             {typeInfo.title} {index + 1}

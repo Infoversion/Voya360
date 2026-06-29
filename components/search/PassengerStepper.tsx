@@ -1,4 +1,6 @@
+import React from 'react';
 import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { PassengerCounts } from '@/store/search.store';
 import { colors, fontSize } from '@/constants/design';
@@ -13,14 +15,14 @@ interface Props {
 }
 
 const TYPES: {
-  key:   keyof PassengerCounts;
-  icon:  string;
-  label: string;
-  sub:   string;
+  key:      keyof PassengerCounts;
+  ionicon:  React.ComponentProps<typeof Ionicons>['name'];
+  label:    string;
+  sub:      string;
 }[] = [
-  { key: 'adults',   icon: '🧑', label: 'Adults',   sub: '12 and over'   },
-  { key: 'children', icon: '🧒', label: 'Children', sub: 'Ages 2–11'     },
-  { key: 'infants',  icon: '👶', label: 'Infants',  sub: 'Under 2 · lap' },
+  { key: 'adults',   ionicon: 'person-outline',  label: 'Adults',   sub: '12 and over'   },
+  { key: 'children', ionicon: 'body-outline',    label: 'Children', sub: 'Ages 2–11'     },
+  { key: 'infants',  ionicon: 'happy-outline',   label: 'Infants',  sub: 'Under 2 · lap' },
 ];
 
 function Stepper({ value, onDecrement, onIncrement, min, max }: {
@@ -111,8 +113,8 @@ export function PassengerStepper({ value, onChange }: Props) {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 18 }}>🧑</Text>
-            <Text style={{ fontSize: fontSize.label, fontWeight: '600', color: colors.text }}>
+            <Ionicons name={total === 1 ? 'person-outline' : 'people-outline'} size={20} color={colors.textMuted} />
+            <Text style={{ fontSize: fontSize.label, fontWeight: '400', color: colors.text }}>
               {summary}
             </Text>
           </View>
@@ -132,7 +134,7 @@ export function PassengerStepper({ value, onChange }: Props) {
                   flexDirection: 'row', alignItems: 'center',
                   paddingHorizontal: 14, paddingVertical: 12,
                 }}>
-                  <Text style={{ fontSize: 22, marginRight: 12 }}>{t.icon}</Text>
+                  <Ionicons name={t.ionicon} size={22} color={colors.textMuted} style={{ marginRight: 12 }} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: fontSize.label, fontWeight: '600', color: colors.text }}>
                       {t.label}

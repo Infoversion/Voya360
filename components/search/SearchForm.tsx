@@ -33,10 +33,10 @@ function CabinDropdown({ value, onChange }: { value: CabinClass; onChange: (v: C
           paddingHorizontal: 12, paddingVertical: 6,
         }}
       >
-        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+        <Text style={{ fontSize: 15, fontWeight: '400', color: colors.text }}>
           {current.label}
         </Text>
-        <Text style={{ fontSize: 9, color: colors.textMuted }}>{open ? '▲' : '▼'}</Text>
+        <Text style={{ fontSize: 10, color: colors.textMuted }}>{open ? '▲' : '▼'}</Text>
       </TouchableOpacity>
 
       {/* Floating menu */}
@@ -160,8 +160,8 @@ export function SearchForm() {
                 }}
               >
                 <Text style={{
-                  fontSize: 13,
-                  fontWeight: active ? '700' : '400',
+                  fontSize: 15,
+                  fontWeight: '400',
                   color: active ? colors.text : colors.textMuted,
                 }}>
                   {label}
@@ -180,7 +180,8 @@ export function SearchForm() {
         <AirportInput label="From" value={origin} onChange={setOrigin} placeholder="Origin city or airport" />
       </View>
 
-      <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}>
+      {/* Swap button — equal padding above and below keeps it centred in the gap */}
+      <View style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 0, zIndex: 30 }}>
         <TouchableOpacity
           onPress={swapAirports}
           style={{
@@ -194,29 +195,19 @@ export function SearchForm() {
         </TouchableOpacity>
       </View>
 
-      <View style={{ position: 'relative', zIndex: 10, marginTop: 4 }}>
+      <View style={{ position: 'relative', zIndex: 10, marginTop: -8 }}>
         <AirportInput label="To" value={destination} onChange={setDestination} placeholder="Destination city or airport" />
       </View>
 
       {/* ── Dates ────────────────────────────────────────────────────── */}
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, zIndex: 1 }}>
-        <DatePicker
-          label="Departure"
-          value={departureDate}
-          onChange={setDepartureDate}
-          destination={destination?.iata}
-        />
-        {isRoundTrip && (
-          <DatePicker
-            label="Return"
-            value={returnDate}
-            onChange={setReturnDate}
-            minDate={departureDate ? new Date(departureDate + 'T00:00:00') : undefined}
-            destination={destination?.iata}
-            rangeStart={departureDate ?? undefined}
-          />
-        )}
-      </View>
+      <DatePicker
+        isRoundTrip={isRoundTrip}
+        departure={departureDate}
+        returnDate={returnDate}
+        onDeparture={setDepartureDate}
+        onReturn={setReturnDate}
+        destination={destination?.iata}
+      />
 
       {/* ── Passengers (collapsible) ─────────────────────────────────── */}
       <View style={{ marginTop: 12, zIndex: 1 }}>
@@ -227,6 +218,9 @@ export function SearchForm() {
       <View style={{ marginTop: 16 }}>
         <Button
           label="Search flights"
+          icon="✈"
+          iconColor="#1E3A8A"
+          large
           onPress={handleSearch}
           loading={isSearching}
           disabled={!canSearch}

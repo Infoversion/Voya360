@@ -167,7 +167,7 @@ export default function BookingConfirmedScreen() {
               <Row label="Base fare"    value={`$${booking.base_fare_usd?.toFixed(2) ?? '—'}`} />
               <Row label="Service fee"  value={`$${booking.service_fee_usd.toFixed(2)}`} />
               {(booking.baggage_fee_usd ?? 0) > 0 && (
-                <Row label="Baggage"    value={`~$${booking.baggage_fee_usd.toFixed(2)}`} />
+                <Row label="Baggage"    value={`+$${booking.baggage_fee_usd.toFixed(2)}`} />
               )}
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

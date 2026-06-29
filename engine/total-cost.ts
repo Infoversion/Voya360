@@ -74,6 +74,47 @@ export function formatDuration(isoDuration: string): string {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
+export interface FareType {
+  label:    string;  // e.g. "Non-refundable", "Flexible"
+  short:    string;  // e.g. "NON-REF", "FLEX"
+  color:    string;
+  bg:       string;
+  refundable:  boolean;
+  changeable:  boolean;
+  refundFee:   string | null;
+  changeFee:   string | null;
+}
+
+export function getFareType(offer: DuffelOffer): FareType {
+  const refund   = offer.conditions?.refund_before_departure;
+  const change   = offer.conditions?.change_before_departure;
+  const canRef   = refund?.allowed ?? false;
+  const canChg   = change?.allowed ?? false;
+
+  let label: string;
+  let short: string;
+  let color: string;
+  let bg:    string;
+
+  if (canRef && canChg) {
+    label = 'Fully flexible';  short = 'FLEX';     color = '#16A34A'; bg = '#F0FDF4';
+  } else if (!canRef && canChg) {
+    label = 'Changeable';      short = 'CHG';      color = '#2563EB'; bg = '#EFF6FF';
+  } else if (canRef && !canChg) {
+    label = 'Refundable';      short = 'REF';      color = '#7C3AED'; bg = '#F5F3FF';
+  } else {
+    label = 'Non-refundable';  short = 'NON-REF';  color = '#DC2626'; bg = '#FEF2F2';
+  }
+
+  return {
+    label, short, color, bg,
+    refundable: canRef,
+    changeable: canChg,
+    refundFee:  refund?.penalty_amount ?? null,
+    changeFee:  change?.penalty_amount ?? null,
+  };
+}
+
 export function getTotalDuration(offer: DuffelOffer): string {
   const totalMinutes = offer.slices.reduce((sum, slice) => {
     const match = slice.duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);

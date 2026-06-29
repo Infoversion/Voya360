@@ -46,7 +46,7 @@ export function AirportInput({ label, value, onChange, placeholder = 'City or ai
       }}>
         {!focused && value ? (
           <TouchableOpacity onPress={() => setFocused(true)}>
-            <Text style={{ fontSize: fontSize.body, color: colors.text, fontWeight: '600' }}>
+            <Text style={{ fontSize: 18, color: colors.text, fontWeight: '800' }}>
               {value.iata}
             </Text>
             <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
