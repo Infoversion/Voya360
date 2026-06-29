@@ -9,6 +9,7 @@ import { FlightCard }     from '@/components/results/FlightCard';
 import { FilterBar }      from '@/components/results/FilterBar';
 import { VoyaCard }       from '@/components/voya/VoyaCard';
 import { useVoya }        from '@/hooks/useVoya';
+import { calculateCost }  from '@/engine/total-cost';
 import { colors, fontSize, spacing } from '@/constants/design';
 import type { DuffelOffer } from '@/types/duffel';
 
@@ -94,6 +95,25 @@ export default function ResultsScreen() {
 
   const cheapestOffer = allOffers[0];
   const fastestOffer  = [...allOffers].sort((a, b) => totalMinutes(a) - totalMinutes(b))[0];
+
+  // Detect baggage flip: top result has more included bags than #2 and was "more expensive" in base fare
+  const baggageFlipPair = useMemo(() => {
+    if (sortMode !== 'total' || mode !== 'bundled' || allOffers.length < 2) return null;
+    const [first, second] = allOffers;
+    const firstCost  = calculateCost(first,  bagCount);
+    const secondCost = calculateCost(second, bagCount);
+    if (
+      firstCost.bagsIncluded > secondCost.bagsIncluded &&
+      firstCost.baseFare > secondCost.baseFare &&
+      firstCost.baseFare - secondCost.baseFare <= 80
+    ) {
+      const airline  = first.slices[0]?.segments[0]?.marketing_carrier?.name ?? 'This flight';
+      const priceDiff = Math.round(firstCost.baseFare - secondCost.baseFare);
+      const bagDiff   = firstCost.bagsIncluded - secondCost.bagsIncluded;
+      return { airline, priceDiff, bagDiff };
+    }
+    return null;
+  }, [allOffers, bagCount, sortMode, mode]);
 
   const depDate = departureDate
     ? new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -415,6 +435,24 @@ export default function ResultsScreen() {
                   <Text style={{ fontSize: fontSize.label, fontWeight: '600', color: colors.textMuted }}>↑ Back to top</Text>
                 </TouchableOpacity>
               )}
+            </View>
+          ) : null}
+          ListHeaderComponent={baggageFlipPair ? (
+            <View style={{
+              marginHorizontal: spacing.pagePadding, marginBottom: 8,
+              backgroundColor: `${colors.accent}10`,
+              borderRadius: 12, borderLeftWidth: 3, borderLeftColor: colors.accent,
+              padding: 12,
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, letterSpacing: 0.5, marginBottom: 3 }}>
+                VOYA · BAG PICK
+              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
+                {baggageFlipPair.airline} is ${baggageFlipPair.priceDiff} more — but includes {baggageFlipPair.bagDiff} free bag{baggageFlipPair.bagDiff > 1 ? 's' : ''}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                After bags, it's the cheaper option. That's why we ranked it first.
+              </Text>
             </View>
           ) : null}
           renderItem={({ item, index }) => (

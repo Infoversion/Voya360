@@ -7,6 +7,7 @@ import { useSearchStore }  from '@/store/search.store';
 import { useBookingStore } from '@/store/booking.store';
 import { getOffer }        from '@/lib/duffel';
 import { PriceSummary }    from '@/components/booking/PriceSummary';
+import { BaggageAddons }  from '@/components/booking/BaggageAddons';
 import { VoyaCard }        from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
 import { formatDuration, getIncludedCheckedBags } from '@/engine/total-cost';
@@ -152,9 +153,8 @@ export default function FlightReviewScreen() {
   const [offer, setLocalOffer] = useState<DuffelOffer | null>(
     () => offers?.find(o => o.id === offerId) ?? null,
   );
-  const [loading, setLoading]       = useState(!offer);
-  const [error, setError]           = useState<string | null>(null);
-  const [localBagCount, setLocalBagCount] = useState(bagCount);
+  const [loading, setLoading] = useState(!offer);
+  const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
     if (offer) { setOffer(offer); return; }
@@ -189,7 +189,7 @@ export default function FlightReviewScreen() {
   const refund         = offer.conditions?.refund_before_departure;
   const change         = offer.conditions?.change_before_departure;
   const includedBags   = getIncludedCheckedBags(offer);
-  const extraBags      = Math.max(0, localBagCount - includedBags);
+  const extraBags      = Math.max(0, bagCount - includedBags);
   const baggageFee     = extraBags * 65;
   const baseFare       = parseFloat(offer.base_amount ?? offer.total_amount);
   const taxAmount      = parseFloat(offer.tax_amount ?? '0');
@@ -296,28 +296,25 @@ export default function FlightReviewScreen() {
         })}
 
         {/* ── BAGGAGE ── */}
+        {/* What's included from the offer */}
         <View style={{
           marginHorizontal: spacing.pagePadding, marginTop: 16,
           backgroundColor: colors.background,
           borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
         }}>
           <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>BAGGAGE</Text>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>WHAT'S INCLUDED</Text>
           </View>
           <View style={{ padding: 14 }}>
-            {/* What's included */}
             {(() => {
-              const seg      = offer.slices[0].segments[0];
-              const pax      = seg.passengers[0];
-              const checked  = pax?.baggages.filter(b => b.type === 'checked') ?? [];
-              const carryOn  = pax?.baggages.filter(b => b.type === 'carry_on') ?? [];
-              const chkQty   = checked.reduce((s, b) => s + b.quantity, 0);
-              const coQty    = carryOn.reduce((s, b) => s + b.quantity, 0);
+              const seg     = offer.slices[0].segments[0];
+              const pax     = seg.passengers[0];
+              const checked = pax?.baggages.filter(b => b.type === 'checked') ?? [];
+              const carryOn = pax?.baggages.filter(b => b.type === 'carry_on') ?? [];
+              const chkQty  = checked.reduce((s, b) => s + b.quantity, 0);
+              const coQty   = carryOn.reduce((s, b) => s + b.quantity, 0);
               return (
-                <View style={{
-                  backgroundColor: chkQty > 0 ? '#F0FDF4' : '#FFF7ED',
-                  borderRadius: 8, padding: 10, marginBottom: 14,
-                }}>
+                <View style={{ backgroundColor: chkQty > 0 ? '#F0FDF4' : '#FFF7ED', borderRadius: 8, padding: 10 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: chkQty > 0 ? colors.success : colors.warning }}>
                     {chkQty > 0 ? `✓ ${chkQty} checked bag${chkQty > 1 ? 's' : ''} included` : '✗ No checked bags included'}
                   </Text>
@@ -327,62 +324,33 @@ export default function FlightReviewScreen() {
                 </View>
               );
             })()}
-
-            {/* Bag stepper */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Checked bags needed</Text>
-                <Text style={{ fontSize: 11, color: colors.textMuted }}>
-                  {includedBags > 0 ? `${includedBags} included · ` : ''}{extraBags > 0 ? `+${extraBags} at ~$65/bag` : 'No extra charge'}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0 }}>
-                <TouchableOpacity
-                  onPress={() => setLocalBagCount(n => Math.max(0, n - 1))}
-                  style={{
-                    width: 36, height: 36, borderRadius: 18,
-                    borderWidth: 1.5, borderColor: localBagCount === 0 ? colors.border : colors.accent,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: localBagCount === 0 ? colors.border : colors.accent, lineHeight: 24 }}>−</Text>
-                </TouchableOpacity>
-                <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text, width: 36, textAlign: 'center' }}>
-                  {localBagCount}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setLocalBagCount(n => Math.min(5, n + 1))}
-                  style={{
-                    width: 36, height: 36, borderRadius: 18,
-                    borderWidth: 1.5, borderColor: localBagCount === 5 ? colors.border : colors.accent,
-                    alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: localBagCount === 5 ? colors.border : colors.accent, lineHeight: 24 }}>+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Vayo bag tip */}
-            {bagTip && (
-              <View style={{
-                backgroundColor: '#FFF7ED', borderRadius: 10,
-                borderLeftWidth: 3, borderLeftColor: colors.accent,
-                padding: 12, marginTop: 4,
-              }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, letterSpacing: 0.5, marginBottom: 3 }}>
-                  VAYO · BAGGAGE TIP
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
-                  {bagTip.headline}
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textMuted, lineHeight: 17 }}>
-                  {bagTip.body}
-                </Text>
-              </View>
-            )}
           </View>
         </View>
+
+        {/* Bag count stepper — writes back to search store so price summary stays in sync */}
+        <View style={{ paddingHorizontal: spacing.pagePadding, marginTop: 8 }}>
+          <BaggageAddons bagsIncluded={includedBags} maxBags={5} />
+        </View>
+
+        {/* Voya bag tip */}
+        {bagTip && (
+          <View style={{
+            marginHorizontal: spacing.pagePadding, marginTop: 4,
+            backgroundColor: '#FFF7ED', borderRadius: 10,
+            borderLeftWidth: 3, borderLeftColor: colors.accent,
+            padding: 12,
+          }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.accent, letterSpacing: 0.5, marginBottom: 3 }}>
+              VOYA · BAGGAGE TIP
+            </Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
+              {bagTip.headline}
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted, lineHeight: 17 }}>
+              {bagTip.body}
+            </Text>
+          </View>
+        )}
 
         {/* ── PRICE BREAKDOWN ── */}
         <View style={{
@@ -493,7 +461,7 @@ export default function FlightReviewScreen() {
 
       <PriceSummary
         offer={offer}
-        bagCount={localBagCount}
+        bagCount={bagCount}
         label="Continue to passengers"
         onPress={() => router.push('/booking/passengers')}
       />

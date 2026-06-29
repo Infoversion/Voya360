@@ -1,8 +1,9 @@
 import { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Input } from '@/components/ui/Input';
+import { DietaryRow } from '@/components/booking/DietaryRow';
 import { PassengerInput, PassengerType } from '@/store/booking.store';
-import { SavedTraveler } from '@/types/booking';
+import { SavedTraveler, DietaryPreference } from '@/types/booking';
 import { colors, fontSize } from '@/constants/design';
 
 const TYPE_LABEL: Record<PassengerType, { title: string; icon: string; note?: string }> = {
@@ -217,31 +218,12 @@ export function PassengerForm({ passenger, index, savedTravelers, onChange }: Pr
         </>
       )}
 
-      {/* Dietary — optional */}
-      <View style={{ marginBottom: 4 }}>
-        <FieldLabel label="Meal preference" />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {(['none', 'vegetarian', 'halal', 'kosher', 'vegan'] as const).map(d => (
-            <TouchableOpacity
-              key={d}
-              onPress={() => onChange({ dietary: d })}
-              style={{
-                paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1.5,
-                borderColor: passenger.dietary === d ? colors.accent : colors.border,
-                backgroundColor: passenger.dietary === d ? `${colors.accent}15` : 'transparent',
-              }}
-            >
-              <Text style={{
-                fontSize: fontSize.label, fontWeight: '600',
-                color: passenger.dietary === d ? colors.accent : colors.textMuted,
-                textTransform: 'capitalize',
-              }}>
-                {d === 'none' ? 'No preference' : d}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+      {/* Dietary — Voya-inferred */}
+      <DietaryRow
+        fullName={`${passenger.givenName} ${passenger.familyName}`}
+        value={(passenger.dietary as DietaryPreference) || null}
+        onChange={pref => onChange({ dietary: pref })}
+      />
     </View>
   );
 }
