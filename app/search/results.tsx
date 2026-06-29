@@ -8,8 +8,9 @@ import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { FlightCard }     from '@/components/results/FlightCard';
 import { FilterBar }      from '@/components/results/FilterBar';
 import { VoyaCard }       from '@/components/voya/VoyaCard';
-import { useVoya }        from '@/hooks/useVoya';
-import { calculateCost }  from '@/engine/total-cost';
+import { useVoya }         from '@/hooks/useVoya';
+import { usePriceHistory } from '@/hooks/usePriceHistory';
+import { calculateCost }   from '@/engine/total-cost';
 import { colors, fontSize, spacing } from '@/constants/design';
 import type { DuffelOffer } from '@/types/duffel';
 
@@ -47,6 +48,7 @@ export default function ResultsScreen() {
   const { profile }              = useAuthStore();
   const { observation, dismiss } = useVoya('results');
   const { createAlert }          = usePriceAlerts();
+  const { trend }                = usePriceHistory(origin?.iata, destination?.iata, cabinClass);
 
   const listRef = useRef<FlatList>(null);
   const [mode, setMode]                       = useState<SelectionMode>('bundled');
@@ -459,6 +461,7 @@ export default function ResultsScreen() {
             <FlightCard
               offer={item}
               bagCount={bagCount}
+              trend={trend}
               showSliceIndex={showSliceIndex}
               onPress={() => handleCardPress(item)}
               isCheapest={item.id === cheapestOffer?.id && mode === 'bundled'}
