@@ -1,5 +1,5 @@
-import { View, Text, TouchableOpacity, Animated } from 'react-native';
-import { useEffect, useRef, useState } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useSearchStore } from '@/store/search.store';
@@ -14,97 +14,85 @@ import type { CabinClass } from '@/types/booking';
 const CABIN_OPTIONS: { value: CabinClass; label: string; icon: string; sub: string }[] = [
   { value: 'economy',         label: 'Economy',  icon: '💺', sub: 'Best value' },
   { value: 'premium_economy', label: 'Premium',  icon: '⭐', sub: 'Extra room' },
-  { value: 'business',        label: 'Business', icon: '🥂', sub: 'Lie-flat' },
-  { value: 'first',           label: 'First',    icon: '👑', sub: 'All-incl.' },
+  { value: 'business',        label: 'Business', icon: '🥂', sub: 'Lie-flat'   },
+  { value: 'first',           label: 'First',    icon: '👑', sub: 'All-incl.'  },
 ];
 
-const PAD = 4; // inner padding of the track
-
-function CabinSelector({ value, onChange }: { value: CabinClass; onChange: (v: CabinClass) => void }) {
-  const slideAnim  = useRef(new Animated.Value(0)).current;
-  const [trackW, setTrackW] = useState(0);
-
-  const activeIndex = CABIN_OPTIONS.findIndex(o => o.value === value);
-  const itemW = trackW > 0 ? (trackW - PAD * 2) / CABIN_OPTIONS.length : 0;
-
-  useEffect(() => {
-    if (!itemW) return;
-    Animated.spring(slideAnim, {
-      toValue: activeIndex * itemW,
-      useNativeDriver: true,
-      damping: 20,
-      stiffness: 200,
-      mass: 0.7,
-    }).start();
-  }, [activeIndex, itemW]);
+function CabinDropdown({ value, onChange }: { value: CabinClass; onChange: (v: CabinClass) => void }) {
+  const [open, setOpen] = useState(false);
+  const current = CABIN_OPTIONS.find(o => o.value === value)!;
 
   return (
-    <View>
-      <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginBottom: 8, fontWeight: '500' }}>
-        Cabin class
-      </Text>
-
-      {/* Track */}
-      <View
+    <View style={{ position: 'relative', zIndex: 50 }}>
+      {/* Trigger pill */}
+      <TouchableOpacity
+        onPress={() => setOpen(o => !o)}
         style={{
-          backgroundColor: '#F0F0F0',
-          borderRadius: 16,
-          padding: PAD,
+          flexDirection: 'row', alignItems: 'center', gap: 5,
+          backgroundColor: '#F3F4F6', borderRadius: 10,
+          paddingHorizontal: 12, paddingVertical: 6,
         }}
-        onLayout={e => setTrackW(e.nativeEvent.layout.width)}
       >
-        {/* Sliding pill */}
-        {itemW > 0 && (
-          <Animated.View
-            style={{
-              position: 'absolute',
-              top: PAD, bottom: PAD,
-              left: PAD,
-              width: itemW,
-              borderRadius: 12,
-              backgroundColor: '#fff',
-              shadowColor: '#000',
-              shadowOpacity: 0.10,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: 3,
-              transform: [{ translateX: slideAnim }],
-            }}
-          />
-        )}
+        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+          {current.label}
+        </Text>
+        <Text style={{ fontSize: 9, color: colors.textMuted }}>{open ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
 
-        {/* Option buttons */}
-        <View style={{ flexDirection: 'row' }}>
-          {CABIN_OPTIONS.map((opt) => {
-            const isActive = value === opt.value;
+      {/* Floating menu */}
+      {open && (
+        <View style={{
+          position:        'absolute',
+          top:             36,
+          right:           0,
+          minWidth:        160,
+          backgroundColor: colors.background,
+          borderRadius:    12,
+          borderWidth:     1,
+          borderColor:     colors.border,
+          shadowColor:     '#000',
+          shadowOpacity:   0.12,
+          shadowRadius:    12,
+          shadowOffset:    { width: 0, height: 4 },
+          elevation:       10,
+          overflow:        'hidden',
+          zIndex:          50,
+        }}>
+          {CABIN_OPTIONS.map((opt, i) => {
+            const active = value === opt.value;
             return (
               <TouchableOpacity
                 key={opt.value}
-                onPress={() => onChange(opt.value)}
-                activeOpacity={0.7}
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, gap: 2 }}
+                onPress={() => { onChange(opt.value); setOpen(false); }}
+                style={{
+                  flexDirection:   'row',
+                  alignItems:      'center',
+                  gap:             10,
+                  paddingHorizontal: 14,
+                  paddingVertical:  11,
+                  backgroundColor: active ? `${colors.accent}10` : 'transparent',
+                  borderTopWidth:  i > 0 ? 1 : 0,
+                  borderTopColor:  colors.border,
+                }}
               >
-                <Text style={{ fontSize: 20, lineHeight: 26 }}>{opt.icon}</Text>
-                <Text style={{
-                  fontSize: 10,
-                  fontWeight: isActive ? '800' : '600',
-                  color: isActive ? colors.accent : colors.textMuted,
-                  letterSpacing: 0.1,
-                }}>
-                  {opt.label}
-                </Text>
-                <Text style={{
-                  fontSize: 9,
-                  color: isActive ? `${colors.accent}99` : '#BBBBBF',
-                  fontWeight: '500',
-                }}>
-                  {opt.sub}
-                </Text>
+                <Text style={{ fontSize: 16 }}>{opt.icon}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{
+                    fontSize: fontSize.label, fontWeight: active ? '700' : '500',
+                    color: active ? colors.accent : colors.text,
+                  }}>
+                    {opt.label}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>{opt.sub}</Text>
+                </View>
+                {active && (
+                  <Text style={{ fontSize: 13, color: colors.accent, fontWeight: '700' }}>✓</Text>
+                )}
               </TouchableOpacity>
             );
           })}
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -119,7 +107,6 @@ export function SearchForm() {
     search, isSearching,
   } = useSearchStore();
 
-  // Pre-populate "From" with nearest airport on first render if origin not set
   useEffect(() => {
     if (origin) return;
     (async () => {
@@ -143,42 +130,56 @@ export function SearchForm() {
 
   return (
     <View style={{ padding: spacing.pagePadding }}>
-      {/* Trip type toggle */}
+
+      {/* ── Row 1: compact trip-type toggle + cabin dropdown ─────────── */}
       <View style={{
-        flexDirection: 'row', backgroundColor: '#F3F4F6',
-        borderRadius: 10, padding: 3, marginBottom: 16, alignSelf: 'flex-start',
+        flexDirection: 'row', alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 14, zIndex: 40,
       }}>
-        {(['One way', 'Round trip'] as const).map((label, i) => {
-          const rt = i === 1;
-          const active = isRoundTrip === rt;
-          return (
-            <TouchableOpacity
-              key={label}
-              onPress={() => setIsRoundTrip(rt)}
-              style={{
-                paddingHorizontal: 16, paddingVertical: 7, borderRadius: 8,
-                backgroundColor: active ? colors.background : 'transparent',
-                shadowColor: active ? '#000' : 'transparent',
-                shadowOpacity: active ? 0.08 : 0,
-                shadowRadius: active ? 4 : 0,
-                shadowOffset: { width: 0, height: 1 },
-                elevation: active ? 2 : 0,
-              }}
-            >
-              <Text style={{ fontSize: fontSize.label, fontWeight: active ? '700' : '400', color: active ? colors.text : colors.textMuted }}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+        {/* One way / Round trip toggle */}
+        <View style={{
+          flexDirection: 'row', backgroundColor: '#F3F4F6',
+          borderRadius: 10, padding: 3,
+        }}>
+          {(['One way', 'Round trip'] as const).map((label, i) => {
+            const rt     = i === 1;
+            const active = isRoundTrip === rt;
+            return (
+              <TouchableOpacity
+                key={label}
+                onPress={() => setIsRoundTrip(rt)}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+                  backgroundColor: active ? colors.background : 'transparent',
+                  shadowColor:    active ? '#000' : 'transparent',
+                  shadowOpacity:  active ? 0.08 : 0,
+                  shadowRadius:   active ? 4 : 0,
+                  shadowOffset:   { width: 0, height: 1 },
+                  elevation:      active ? 2 : 0,
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: active ? '700' : '400',
+                  color: active ? colors.text : colors.textMuted,
+                }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Cabin class dropdown */}
+        <CabinDropdown value={cabinClass} onChange={setCabinClass} />
       </View>
 
-      {/* Airport inputs */}
+      {/* ── Airport inputs ────────────────────────────────────────────── */}
       <View style={{ position: 'relative', zIndex: 20 }}>
         <AirportInput label="From" value={origin} onChange={setOrigin} placeholder="Origin city or airport" />
       </View>
 
-      {/* Swap button */}
       <View style={{ alignItems: 'center', marginVertical: -4, zIndex: 10 }}>
         <TouchableOpacity
           onPress={swapAirports}
@@ -197,7 +198,7 @@ export function SearchForm() {
         <AirportInput label="To" value={destination} onChange={setDestination} placeholder="Destination city or airport" />
       </View>
 
-      {/* Dates */}
+      {/* ── Dates ────────────────────────────────────────────────────── */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 12, zIndex: 1 }}>
         <DatePicker
           label="Departure"
@@ -217,18 +218,13 @@ export function SearchForm() {
         )}
       </View>
 
-      {/* Passengers */}
-      <View style={{ marginTop: 12 }}>
+      {/* ── Passengers (collapsible) ─────────────────────────────────── */}
+      <View style={{ marginTop: 12, zIndex: 1 }}>
         <PassengerStepper value={passengerCounts} onChange={setPassengerCounts} />
       </View>
 
-      {/* Cabin class — animated sliding segmented control */}
+      {/* ── Search ───────────────────────────────────────────────────── */}
       <View style={{ marginTop: 16 }}>
-        <CabinSelector value={cabinClass} onChange={setCabinClass} />
-      </View>
-
-      {/* Search button */}
-      <View style={{ marginTop: 20 }}>
         <Button
           label="Search flights"
           onPress={handleSearch}
@@ -236,6 +232,7 @@ export function SearchForm() {
           disabled={!canSearch}
         />
       </View>
+
     </View>
   );
 }
