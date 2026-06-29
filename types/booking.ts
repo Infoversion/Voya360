@@ -15,6 +15,7 @@ export interface UserProfile {
   default_bag_count:   number;
   dietary_preference:  DietaryPreference | null;
   dietary_confirmed:   boolean;
+  push_token:          string | null;
   created_at:          string;
 }
 

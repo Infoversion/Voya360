@@ -10,11 +10,15 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#0D1B3E"
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.voya360.app"
+      "bundleIdentifier": "com.voya360.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Voya360 uses your location to pre-fill your nearest airport."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +34,11 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-dev-client"
+      "expo-dev-client",
+      ["@stripe/stripe-react-native", {
+        "merchantIdentifier": "merchant.com.voya360.app",
+        "enableGooglePay": false
+      }]
     ],
     "experiments": {
       "typedRoutes": true

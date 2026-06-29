@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  View, Text, KeyboardAvoidingView, Platform, ScrollView,
+  View, Text, Image, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +13,7 @@ export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const { signUp, isLoading, error, clearError } = useAuthStore();
+  const { signUp, isLoading, error, clearError, emailConfirmPending } = useAuthStore();
 
   const canSubmit = fullName.trim().length > 0
     && email.trim().length > 0
@@ -25,6 +25,20 @@ export default function SignupScreen() {
     await signUp(email.trim().toLowerCase(), password, fullName.trim());
   };
 
+  if (emailConfirmPending) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>📧</Text>
+        <Text style={{ fontSize: fontSize.header, fontWeight: '700', color: colors.text, textAlign: 'center', marginBottom: 12 }}>
+          Check your email
+        </Text>
+        <Text style={{ fontSize: fontSize.body, color: colors.textMuted, textAlign: 'center', lineHeight: 24 }}>
+          We sent a confirmation link to {email}. Tap it to activate your account, then come back to sign in.
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAvoidingView
@@ -35,10 +49,17 @@ export default function SignupScreen() {
           contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.pagePadding }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={{ fontSize: 36, fontWeight: '800', color: colors.accent, marginBottom: 4 }}>
-            Voya360
-          </Text>
-          <Text style={{ fontSize: fontSize.body, color: colors.textMuted, marginBottom: 40 }}>
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+            <Image
+              source={require('@/assets/logo.png')}
+              style={{ width: 130, height: 130 }}
+              resizeMode="contain"
+            />
+            <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginTop: 10, letterSpacing: 0.2 }}>
+              Book fast · Pay fair · Fly smarter
+            </Text>
+          </View>
+          <Text style={{ fontSize: fontSize.body, color: colors.textMuted, marginBottom: 28, textAlign: 'center' }}>
             Create your account
           </Text>
 

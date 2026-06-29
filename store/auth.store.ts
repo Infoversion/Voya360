@@ -4,24 +4,26 @@ import { supabase } from '@/lib/supabase';
 import { UserProfile } from '@/types/booking';
 
 interface AuthState {
-  session:       Session | null;
-  profile:       UserProfile | null;
-  isLoading:     boolean;
-  error:         string | null;
-  setSession:    (session: Session | null) => void;
-  loadProfile:   () => Promise<void>;
-  signIn:        (email: string, password: string) => Promise<void>;
-  signUp:        (email: string, password: string, fullName: string) => Promise<void>;
-  signOut:       () => Promise<void>;
-  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
-  clearError:    () => void;
+  session:            Session | null;
+  profile:            UserProfile | null;
+  isLoading:          boolean;
+  error:              string | null;
+  emailConfirmPending: boolean;
+  setSession:         (session: Session | null) => void;
+  loadProfile:        () => Promise<void>;
+  signIn:             (email: string, password: string) => Promise<void>;
+  signUp:             (email: string, password: string, fullName: string) => Promise<void>;
+  signOut:            () => Promise<void>;
+  updateProfile:      (updates: Partial<UserProfile>) => Promise<void>;
+  clearError:         () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  session:   null,
-  profile:   null,
-  isLoading: false,
-  error:     null,
+  session:             null,
+  profile:             null,
+  isLoading:           false,
+  error:               null,
+  emailConfirmPending: false,
 
   setSession: (session) => set({ session }),
 
@@ -47,18 +49,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUp: async (email, password, fullName) => {
-    set({ isLoading: true, error: null });
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    set({ isLoading: true, error: null, emailConfirmPending: false });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName } },
+    });
     if (error) {
       set({ isLoading: false, error: error.message });
       return;
     }
-    if (data.user) {
-      await supabase.from('users').insert({
-        id:        data.user.id,
-        email,
-        full_name: fullName,
-      });
+    // No session = email confirmation required; trigger already created the user row
+    if (data.user && !data.session) {
+      set({ isLoading: false, emailConfirmPending: true });
+      return;
     }
     set({ isLoading: false });
   },

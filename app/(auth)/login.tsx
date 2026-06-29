@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  View, Text, KeyboardAvoidingView, Platform, ScrollView, Alert,
+  View, Text, Image, KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,10 +33,17 @@ export default function LoginScreen() {
           contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.pagePadding }}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={{ fontSize: 36, fontWeight: '800', color: colors.accent, marginBottom: 4 }}>
-            Voya360
-          </Text>
-          <Text style={{ fontSize: fontSize.body, color: colors.textMuted, marginBottom: 40 }}>
+          <View style={{ alignItems: 'center', marginBottom: 36 }}>
+            <Image
+              source={require('@/assets/logo.png')}
+              style={{ width: 150, height: 150 }}
+              resizeMode="contain"
+            />
+            <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginTop: 10, letterSpacing: 0.2 }}>
+              Book fast · Pay fair · Fly smarter
+            </Text>
+          </View>
+          <Text style={{ fontSize: fontSize.body, color: colors.textMuted, marginBottom: 28, textAlign: 'center' }}>
             Sign in to your account
           </Text>
 
