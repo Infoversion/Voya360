@@ -209,7 +209,7 @@ export default function ResultsScreen() {
             {depDate}{retDate ? ` – ${retDate}` : ''} · {paxSummary} · {cabinClass}
           </Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} resizeMode="cover" />
+        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
       </View>
 
       {/* ── Round trip mode toggle ── */}

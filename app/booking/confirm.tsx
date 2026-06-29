@@ -59,7 +59,7 @@ export default function ConfirmScreen() {
             Step 3 of 3
           </Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} resizeMode="cover" />
+        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.pagePadding, paddingBottom: 20 }}>
