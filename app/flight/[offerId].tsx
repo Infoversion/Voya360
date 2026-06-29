@@ -224,7 +224,7 @@ export default function FlightReviewScreen() {
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>Review your trip</Text>
           <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>Step 1 of 3 · Confirm details before paying</Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 32, height: 32, borderRadius: 16 }} resizeMode="cover" />
+        <Image source={require('@/assets/logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} resizeMode="cover" />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>

@@ -101,14 +101,9 @@ export default function HomeScreen() {
         contentContainerStyle={{ paddingBottom: 32 }}
       >
         {/* ── Navy hero ──────────────────────────────────────────────── */}
-        <View style={{ backgroundColor: '#0D1B3E', paddingTop: 16, paddingBottom: 48, paddingHorizontal: spacing.pagePadding }}>
+        <View style={{ backgroundColor: '#0D1B3E', paddingTop: 8, paddingBottom: 48, paddingHorizontal: spacing.pagePadding }}>
           {/* Header row */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-            <Image
-              source={require('@/assets/logo.png')}
-              style={{ width: 44, height: 44, marginRight: 10 }}
-              resizeMode="contain"
-            />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 20, fontWeight: '800', color: '#fff', lineHeight: 24 }}>
                 {firstName ? `Where to, ${firstName}?` : 'Where to next?'}
@@ -117,6 +112,11 @@ export default function HomeScreen() {
                 Book fast · Pay fair · Fly smarter
               </Text>
             </View>
+            <Image
+              source={require('@/assets/logo.png')}
+              style={{ width: 60, height: 60 }}
+              resizeMode="contain"
+            />
           </View>
 
           {/* Voya insight card */}
@@ -127,7 +127,7 @@ export default function HomeScreen() {
 
         {/* ── Search card (floats over hero) ─────────────────────────── */}
         <View style={{
-          marginTop: -32,
+          marginTop: -56,
           marginHorizontal: spacing.pagePadding,
           backgroundColor: colors.background,
           borderRadius: 20,

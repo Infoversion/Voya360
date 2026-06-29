@@ -108,7 +108,7 @@ export default function PassengersScreen() {
             Step 2 of 3
           </Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 32, height: 32, borderRadius: 16 }} resizeMode="cover" />
+        <Image source={require('@/assets/logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} resizeMode="cover" />
       </View>
 
       <ScrollView
