@@ -30,6 +30,9 @@ function blankPassenger(id: string, type: PassengerType = 'adult'): PassengerInp
   };
 }
 
+// key: `${segmentId}__${passengerId}` → Duffel seat service id
+export type SelectedSeats = Record<string, string>;
+
 interface BookingState {
   selectedOffer:    DuffelOffer | null;
   passengers:       PassengerInput[];
@@ -40,6 +43,8 @@ interface BookingState {
   isCreatingIntent: boolean;
   isConfirming:     boolean;
   error:            string | null;
+  selectedSeats:    SelectedSeats;
+  selectedServices: Array<{ id: string; quantity: number }>;
 
   setOffer:            (offer: DuffelOffer) => void;
   initPassengers:      (count: number) => void;
@@ -49,6 +54,8 @@ interface BookingState {
   setCreatingIntent:   (v: boolean) => void;
   setConfirming:       (v: boolean) => void;
   setError:            (msg: string | null) => void;
+  setSeat:             (segmentId: string, passengerId: string, serviceId: string | null) => void;
+  setSelectedServices: (services: Array<{ id: string; quantity: number }>) => void;
   reset:               () => void;
 }
 
@@ -65,6 +72,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   isCreatingIntent: false,
   isConfirming:     false,
   error:            null,
+  selectedSeats:    {},
+  selectedServices: [],
 
   setOffer: (offer) => {
     const { passengers } = get();
@@ -93,9 +102,19 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   setConfirming:    (v) => set({ isConfirming: v }),
   setError:         (msg) => set({ error: msg }),
 
+  setSeat: (segmentId, passengerId, serviceId) => set(s => {
+    const key = `${segmentId}__${passengerId}`;
+    const next = { ...s.selectedSeats };
+    if (serviceId) next[key] = serviceId; else delete next[key];
+    return { selectedSeats: next };
+  }),
+
+  setSelectedServices: (services) => set({ selectedServices: services }),
+
   reset: () => set({
     selectedOffer: null, passengers: [], paymentIntentId: null,
     clientToken: null, duffelOrderId: null, pnr: null,
     isCreatingIntent: false, isConfirming: false, error: null,
+    selectedSeats: {}, selectedServices: [],
   }),
 }));

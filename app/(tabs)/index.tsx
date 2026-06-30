@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ScrollView, View, Text, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useAuthStore }   from '@/store/auth.store';
 import { useSearchStore } from '@/store/search.store';
 import { SearchForm }     from '@/components/search/SearchForm';
@@ -44,12 +44,14 @@ export default function HomeScreen() {
   const [corridorPrice, setCorridorPrice]     = useState<PriceHistory | null>(null);
   const [prevPrice, setPrevPrice]             = useState<PriceHistory | null>(null);
 
-  useEffect(() => {
-    loadUpcomingBooking();
-    if (profile?.home_origin && profile?.home_destination) {
-      loadCorridorPrice(profile.home_origin, profile.home_destination);
-    }
-  }, [profile]);
+  useFocusEffect(
+    useCallback(() => {
+      loadUpcomingBooking();
+      if (profile?.home_origin && profile?.home_destination) {
+        loadCorridorPrice(profile.home_origin, profile.home_destination);
+      }
+    }, [profile])
+  );
 
   const loadUpcomingBooking = async () => {
     const { data } = await supabase
@@ -60,7 +62,7 @@ export default function HomeScreen() {
       .order('departure_at', { ascending: true })
       .limit(1)
       .maybeSingle();
-    if (data) setUpcomingBooking(data as Booking);
+    setUpcomingBooking(data as Booking | null);
   };
 
   const loadCorridorPrice = async (origin: string, destination: string) => {
@@ -151,7 +153,8 @@ export default function HomeScreen() {
               borderWidth: 1.5,
               borderColor: `${colors.accent}30`,
               borderRadius: 14,
-              padding: 14,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
               flexDirection: 'row',
               alignItems: 'center',
             }}
@@ -159,16 +162,11 @@ export default function HomeScreen() {
             <Text style={{ fontSize: 22, marginRight: 10 }}>✈️</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginBottom: 2 }}>
-                Upcoming flight
+                Upcoming flight{upcomingBooking.departure_at ? ` · ${fmtDate(upcomingBooking.departure_at)}` : ''}
               </Text>
               <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>
                 {upcomingBooking.origin} → {upcomingBooking.destination}
               </Text>
-              {upcomingBooking.departure_at && (
-                <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
-                  {fmtDate(upcomingBooking.departure_at)} · PNR {upcomingBooking.pnr ?? '—'}
-                </Text>
-              )}
             </View>
             <Text style={{ fontSize: 18, color: colors.accent }}>›</Text>
           </TouchableOpacity>

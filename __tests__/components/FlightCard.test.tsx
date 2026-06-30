@@ -31,7 +31,7 @@ function makeOffer(opts: {
     duration:           'PT14H',
     operating_carrier:  { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier:  { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
-    flight_number:      flight,
+    marketing_carrier_flight_number: flight,
     passengers:         [{
       passenger_id: 'pax-1',
       cabin_class:  'economy',

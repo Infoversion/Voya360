@@ -157,6 +157,184 @@ Z@r@ is the app's defining differentiator. She is not a chatbot. She does not ha
 
 ---
 
+## Booking Flow (current implementation)
+
+```
+Home (search form)
+  → search/results.tsx          Step 1 — pick a flight
+  → flight/[offerId].tsx        Step 2 — review itinerary, select seats, add bags
+  → booking/passengers.tsx      Step 3 — fill passenger details
+  → booking/confirm.tsx         Step 4 — confirm & pay
+  → booking/[bookingId].tsx     Post-booking / itinerary / manage
+```
+
+**Seat selection placement note:** Seat selection is currently on the review screen (Step 2), before passengers are filled in. The right place is after passengers (between Step 3 and 4). This is a pending UX fix — decision needed: a dedicated `/booking/seats` screen or at the top of the confirm screen.
+
+---
+
+## File Structure
+
+```
+voya360/
+├── app/
+│   ├── _layout.tsx                   # Root layout, auth gate, VoyaProvider
+│   ├── (auth)/
+│   │   ├── _layout.tsx
+│   │   ├── login.tsx
+│   │   └── signup.tsx
+│   ├── (tabs)/
+│   │   ├── _layout.tsx
+│   │   ├── index.tsx                 # Home — corridor widget + search form
+│   │   ├── bookings.tsx              # Booking history
+│   │   └── profile.tsx               # Profile, saved travelers, preferences
+│   ├── search/results.tsx            # Search results
+│   ├── flight/[offerId].tsx          # Review screen — itinerary, seats, bags, price
+│   ├── booking/
+│   │   ├── passengers.tsx            # Passenger details form
+│   │   ├── confirm.tsx               # Confirm & pay
+│   │   └── [bookingId].tsx           # Post-booking itinerary / manage booking
+├── components/
+│   ├── search/
+│   │   ├── SearchForm.tsx
+│   │   ├── AirportInput.tsx
+│   │   ├── DatePicker.tsx
+│   │   └── PassengerStepper.tsx
+│   ├── results/
+│   │   ├── FlightCard.tsx            # Total You Pay, trend arrow, fare type, stop detail with terminals
+│   │   ├── BaggageBadge.tsx
+│   │   ├── SmartBadge.tsx
+│   │   ├── FilterBar.tsx
+│   │   └── TrendArrow.tsx
+│   ├── booking/
+│   │   ├── PassengerForm.tsx
+│   │   ├── DietaryRow.tsx            # Voya dietary inference nudge
+│   │   ├── BaggageAddons.tsx         # Bag count stepper (used on confirm screen)
+│   │   ├── SeatMapSelector.tsx       # Interactive seat grid — per-passenger, per-segment
+│   │   └── PriceSummary.tsx          # Sticky footer: base + fee + bags = total
+│   ├── voya/
+│   │   ├── VoyaCard.tsx              # Dismissible AI insight card
+│   │   └── VoyaProvider.tsx          # Initialises Voya on app open
+│   └── ui/
+│       ├── Button.tsx
+│       ├── Input.tsx
+│       ├── AirlineLogo.tsx
+│       ├── PageLogo.tsx
+│       └── StepIndicator.tsx
+├── engine/                           # Pure TypeScript — zero React dependencies
+│   ├── dietary-inference.ts          # Name → dietary preference (on-device)
+│   ├── price-trends.ts               # Trend calculation from price_history
+│   ├── seasonal-events.ts            # Hardcoded event calendar
+│   └── total-cost.ts                 # Total You Pay calculation + baggage flip
+├── lib/
+│   ├── supabase.ts                   # Supabase client
+│   ├── duffel.ts                     # Callers for duffel-proxy Edge Function
+│   ├── stripe.ts                     # Stripe RN SDK setup
+│   └── notifications.ts              # Expo push setup
+├── store/
+│   ├── auth.store.ts
+│   ├── search.store.ts
+│   ├── booking.store.ts              # selectedSeats + selectedServices live here
+│   └── zara.store.ts                 # Ephemeral Voya observations
+├── hooks/
+│   ├── useFlightSearch.ts
+│   ├── useBookingFlow.ts             # Merges seats + services, drives Stripe/sandbox
+│   ├── useSavedTravelers.ts
+│   ├── usePriceHistory.ts
+│   ├── usePriceAlerts.ts
+│   └── useVoya.ts
+├── types/
+│   ├── duffel.ts
+│   ├── booking.ts
+│   └── zara.ts
+├── constants/
+│   ├── corridors.ts                  # Top 50 diaspora corridors list
+│   ├── airports.ts                   # Local airport search (~50k entries, instant)
+│   ├── design.ts                     # Design tokens (colours, font sizes, spacing)
+│   └── seasonal-events.ts            # Eid, Diwali, Christmas windows by corridor
+├── assets/
+│   ├── logo.png                      # Transparent navy badge — used everywhere
+│   ├── logo-alt.png                  # 4-option concept sheet — stored, not used in UI
+│   └── names-dictionary.json         # ~50k names tagged by cultural + dietary
+├── supabase/
+│   ├── migrations/
+│   │   ├── 001_schema.sql
+│   │   └── 002_rls.sql
+│   └── functions/
+│       ├── duffel-proxy/index.ts     # All Duffel API calls — see actions list below
+│       ├── price-snapshot/index.ts   # Cron every 6h — writes to price_history
+│       ├── zara-init/index.ts        # Claude API — returns Voya observations JSON
+│       └── price-alert-checker/index.ts  # Cron every 6h — triggers push notifications
+└── __tests__/
+    ├── engine/
+    │   ├── dietary-inference.test.ts
+    │   ├── price-trends.test.ts
+    │   ├── seasonal-events.test.ts
+    │   └── total-cost.test.ts
+    └── components/
+        ├── FlightCard.test.tsx
+        └── ZaraCard.test.tsx
+```
+
+---
+
+## duffel-proxy Action Reference
+
+All Duffel calls go through `supabase/functions/duffel-proxy/index.ts`. The client never calls Duffel directly. Actions:
+
+| Action | Duffel endpoint | Notes |
+|---|---|---|
+| `offer_requests_create` | `POST /air/offer_requests` | Flight search |
+| `offer_get` | `GET /air/offers/{id}` | Full offer detail |
+| `seat_map_get` | `GET /air/seat_maps?offer_id={id}` | Returns `SeatMap[]` |
+| `available_services_get` | `GET /air/offers/{id}/available_services` | Returns baggage services only (filtered to `type=baggage`) |
+| `booking_initiate` | Stripe intent + `POST /air/orders` | Sandbox: creates order directly; Stripe: creates intent, webhook creates order |
+| `order_get` | `GET /air/orders/{id}` | Post-booking detail including `documents[]` (e-ticket numbers) |
+| `order_change_preview` | Duffel order changes API | Preview change cost |
+| `order_change_confirm` | Duffel order changes API | Confirm change |
+| `order_cancel_preview` | Duffel cancellations API | Preview refund |
+| `order_cancel_confirm` | Duffel cancellations API | Confirm cancellation |
+| `delete_account` | Internal | Deletes user and all data |
+
+`booking_initiate` accepts an optional `services` array — `Array<{ id: string; quantity: number }>` — which is passed directly to the Duffel order. This covers both seat selections and extra baggage.
+
+---
+
+## Duffel API Field Names (gotchas)
+
+The duffel-proxy passes raw API responses through without field transformation. Field names must match the Duffel API exactly.
+
+**Correct field names on offer segments:**
+- `marketing_carrier_flight_number` — NOT `flight_number` (that field does not exist on offer segments)
+- `origin_terminal` / `destination_terminal` — nullable strings, present on segments
+- `aircraft` — `{ iata_code: string; name: string } | null`
+- `available_services` on seat elements — per-passenger, keyed by `passenger_id`
+
+**Seat map structure:**
+```
+SeatMap → cabins[] → rows[] → sections[] → elements[]
+```
+Each `SeatElement` has `type` (`seat | empty | bassinet | lavatory | galley | closet | stairs`), `designator` (e.g. `22A`), and `available_services[]` — one entry per passenger who can book that seat. A seat with no entry for a given passenger is taken/unavailable for them.
+
+**Seat selection key format:** `${segmentId}__${duffelPassengerId}` → Duffel service ID. Stored in `booking.store.ts` as `selectedSeats: Record<string, string>`.
+
+---
+
+## Booking Store (`store/booking.store.ts`)
+
+Key state beyond the obvious:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `selectedSeats` | `Record<string, string>` | Key: `${segmentId}__${duffelPaxId}` → Duffel seat service ID |
+| `selectedServices` | `Array<{id, quantity}>` | Extra baggage services chosen on review screen |
+| `passengers` | `PassengerInput[]` | Local passenger data — aligned to `offer.passengers` order |
+
+`duffelPassengerIds` needed by `SeatMapSelector` come from `offer.passengers[].id` (the Duffel offer passenger IDs), not from `booking.store.ts` passengers (which use local UUIDs).
+
+`useBookingFlow.ts` reads both `selectedSeats` and `selectedServices` via `getState()` at payment time and merges them into a single `services` array for `initiateBooking`.
+
+---
+
 ## Data Model (Supabase)
 
 ```sql
@@ -185,7 +363,7 @@ saved_travelers (
 bookings (
   id uuid PK, user_id uuid FK,
   duffel_order_id text UNIQUE, pnr text,
-  status text,                   -- confirmed | cancelled | refunded
+  status text,                   -- confirmed | cancelled | refunded | return_cancelled
   origin text, destination text,
   departure_at timestamptz, arrival_at timestamptz,
   airline text, cabin_class text, passenger_count int,
@@ -221,100 +399,29 @@ price_alerts (
 
 ---
 
-## File Structure
+## Pending Items (before launch)
 
+### Hard blockers
+- **Stripe production keys** — `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` not yet set in Supabase secrets. Payment flow runs in sandbox mode until these are added. Once set, the `booking_initiate` action switches to Stripe mode automatically.
+
+### UX decisions needed
+- **Seat selection placement** — currently on review screen (Step 2 of 4), before passenger names are known. Should move to after passenger details. Options: (a) dedicated `/booking/seats` screen between passengers and confirm, or (b) seat section at the top of the confirm screen. Decision pending.
+- **Baggage fallback** — the `BaggageAddons` component was removed from the review screen in favour of real Duffel services. If an airline doesn't expose baggage services via Duffel's available services API, there is currently no UI for the user to indicate extra bags. Need a fallback for this case.
+- **Seat summary on confirm screen** — chosen seats are stored in the booking store but not displayed on the confirm screen before payment. User should see "Seat 22A — Nasir" before tapping "Confirm & Pay".
+
+### Operational
+- **Verify `price-snapshot` cron** is deployed to Supabase and firing every 6 hours. Without this, trend arrows and Z@r@ price observations have no data.
+- **Verify `price-alert-checker` cron** is deployed and push notifications fire end-to-end.
+
+---
+
+## Build Command
+
+```bash
+npx expo run:ios --device "Yodaphone"
 ```
-voya360/
-├── app/
-│   ├── _layout.tsx                   # Root layout, auth gate, ZaraProvider
-│   ├── (auth)/
-│   │   ├── _layout.tsx
-│   │   ├── login.tsx
-│   │   └── signup.tsx
-│   ├── (tabs)/
-│   │   ├── _layout.tsx
-│   │   ├── index.tsx                 # Home — corridor widget + search form
-│   │   ├── bookings.tsx              # Booking history
-│   │   └── profile.tsx               # Profile, saved travelers, preferences
-│   ├── search/results.tsx            # Search results (step 2)
-│   ├── flight/[offerId].tsx          # Review screen (step 3)
-│   ├── booking/confirm.tsx           # Confirm & pay (step 4)
-│   └── booking/[bookingId].tsx       # Post-booking / itinerary
-├── components/
-│   ├── search/
-│   │   ├── SearchForm.tsx
-│   │   ├── AirportInput.tsx
-│   │   ├── DatePicker.tsx
-│   │   └── PassengerStepper.tsx
-│   ├── results/
-│   │   ├── FlightCard.tsx            # Shows Total You Pay, total time, bags
-│   │   ├── BaggageBadge.tsx
-│   │   ├── SmartBadge.tsx
-│   │   ├── FilterBar.tsx
-│   │   └── TrendArrow.tsx
-│   ├── booking/
-│   │   ├── PassengerForm.tsx
-│   │   ├── DietaryRow.tsx            # Shows Z@r@'s dietary inference nudge
-│   │   ├── BaggageAddons.tsx
-│   │   └── PriceSummary.tsx          # Sticky footer: base + fee + bags = total
-│   ├── zara/
-│   │   ├── ZaraCard.tsx              # Dismissible insight card
-│   │   └── ZaraProvider.tsx          # Initialises Z@r@ on app open
-│   └── ui/
-│       ├── Button.tsx
-│       ├── Input.tsx
-│       └── StepIndicator.tsx
-├── engine/                           # Pure TypeScript — zero React dependencies
-│   ├── dietary-inference.ts          # Name → dietary preference (on-device)
-│   ├── price-trends.ts               # Trend calculation from price_history
-│   ├── seasonal-events.ts            # Hardcoded event calendar
-│   └── total-cost.ts                 # Total You Pay calculation + baggage flip
-├── lib/
-│   ├── supabase.ts                   # Supabase client
-│   ├── duffel.ts                     # Callers for duffel-proxy Edge Function
-│   ├── stripe.ts                     # Stripe RN SDK setup
-│   └── notifications.ts              # Expo push setup
-├── store/
-│   ├── auth.store.ts
-│   ├── search.store.ts
-│   ├── booking.store.ts
-│   └── zara.store.ts                 # Ephemeral Z@r@ observations
-├── hooks/
-│   ├── useFlightSearch.ts
-│   ├── useBookingFlow.ts
-│   ├── useSavedTravelers.ts
-│   ├── usePriceHistory.ts
-│   ├── usePriceAlerts.ts
-│   └── useZara.ts
-├── types/
-│   ├── duffel.ts
-│   ├── booking.ts
-│   └── zara.ts
-├── constants/
-│   ├── corridors.ts                  # Top 50 diaspora corridors list
-│   ├── design.ts                     # Design tokens (colours, font sizes, spacing)
-│   └── seasonal-events.ts            # Eid, Diwali, Christmas windows by corridor
-├── assets/
-│   └── names-dictionary.json         # ~50k names tagged by cultural + dietary
-├── supabase/
-│   ├── migrations/
-│   │   ├── 001_schema.sql
-│   │   └── 002_rls.sql
-│   └── functions/
-│       ├── duffel-proxy/index.ts
-│       ├── price-snapshot/index.ts
-│       ├── zara-init/index.ts
-│       └── price-alert-checker/index.ts
-└── __tests__/
-    ├── engine/
-    │   ├── dietary-inference.test.ts
-    │   ├── price-trends.test.ts
-    │   ├── seasonal-events.test.ts
-    │   └── total-cost.test.ts
-    └── components/
-        ├── FlightCard.test.tsx
-        └── ZaraCard.test.tsx
-```
+
+Always rebuild after code changes. Use `--no-build-cache` if native modules changed. Do not ask before rebuilding.
 
 ---
 

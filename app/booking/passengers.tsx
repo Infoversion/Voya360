@@ -27,10 +27,22 @@ function validate(passengers: PassengerInput[]): string | null {
     if (!isInfant) {
       if (!p.email.includes('@')) return `${label}: valid email required`;
       if (!p.phone.trim())        return `${label}: phone required`;
+      const stripped = p.phone.replace(/[^\d+]/g, '');
+      const e164     = stripped.startsWith('+') ? stripped : `+${stripped}`;
+      if (!/^\+[1-9]\d{10,14}$/.test(e164)) {
+        return `${label}: phone must start with country code — e.g. +1 for US, +44 for UK, +91 for India`;
+      }
     }
   }
   return null;
 }
+
+const PHONE_PREFIX: Record<string, string> = {
+  US: '+1',  CA: '+1',  GB: '+44', IN: '+91', PK: '+92',
+  BD: '+880', LK: '+94', NP: '+977', PH: '+63', MY: '+60',
+  SG: '+65',  AE: '+971', QA: '+974', SA: '+966', AU: '+61',
+  DE: '+49',  FR: '+33',  NL: '+31',  IE: '+353', NZ: '+64',
+};
 
 export default function PassengersScreen() {
   const { passengers, updatePassenger } = useBookingStore();
@@ -39,28 +51,56 @@ export default function PassengersScreen() {
   const { observation, dismiss } = useVoya('passengers');
   const [attempted, setAttempted] = useState(false);
 
-  // Pre-populate first adult from logged-in user profile, copy contact to infants
+  // Effect 1: fill name / email / phone from profile — re-runs if profile loads late
   useEffect(() => {
     if (!passengers.length) return;
     const firstAdult = passengers.find(p => p.type === 'adult');
-    if (!firstAdult || firstAdult.givenName || firstAdult.email) return; // already filled
+    if (!firstAdult) return;
 
-    const fullName = (profile?.full_name ?? '').trim();
-    const parts = fullName.split(/\s+/);
-    const givenName = parts[0] ?? '';
+    const fullName   = (profile?.full_name ?? '').trim();
+    const parts      = fullName.split(/\s+/);
+    const givenName  = parts[0] ?? '';
     const familyName = parts.slice(1).join(' ');
-    const email = session?.user?.email ?? '';
-    const phone = profile?.phone ?? '';
+    const email      = session?.user?.email ?? '';
+    const phone      = profile?.phone ?? '';
 
-    updatePassenger(firstAdult.id, { givenName, familyName, email, phone });
+    const updates: Partial<PassengerInput> = {};
+    if (!firstAdult.givenName)  updates.givenName  = givenName;
+    if (!firstAdult.familyName) updates.familyName = familyName;
+    if (!firstAdult.email)      updates.email      = email;
+    if (!firstAdult.phone && phone) updates.phone  = phone;
+    if (Object.keys(updates).length) updatePassenger(firstAdult.id, updates);
 
-    // Infants use the first adult's email/phone at booking time — pre-fill silently
     passengers.filter(p => p.type === 'infant_without_seat').forEach(infant => {
-      updatePassenger(infant.id, { email, phone });
+      const inf: Partial<PassengerInput> = {};
+      if (!infant.email && email) inf.email = email;
+      if (!infant.phone && phone) inf.phone = phone;
+      if (Object.keys(inf).length) updatePassenger(infant.id, inf);
     });
-  }, []);
+  }, [profile?.phone, profile?.full_name, session?.user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Detect country from device location and pre-fill nationality for all blank passengers
+  // Effect 2: fill DOB / passport / gender from primary saved traveler (each field only if empty)
+  useEffect(() => {
+    if (!travelers.length || !passengers.length) return;
+    const firstAdult = passengers.find(p => p.type === 'adult');
+    if (!firstAdult) return;
+
+    const primary = travelers.find(t => t.is_primary) ?? travelers[0];
+    if (!primary) return;
+
+    const updates: Partial<PassengerInput> = {};
+    if (!firstAdult.savedTravelerId) updates.savedTravelerId = primary.id;
+    if (!firstAdult.dateOfBirth)     updates.dateOfBirth     = primary.date_of_birth   ?? '';
+    if (!firstAdult.passportNumber)  updates.passportNumber  = primary.passport_number ?? '';
+    if (!firstAdult.passportCountry) updates.passportCountry = primary.passport_country ?? '';
+    if (!firstAdult.passportExpiry)  updates.passportExpiry  = primary.passport_expiry ?? '';
+    if (!firstAdult.dietary)         updates.dietary         = primary.dietary_preference ?? '';
+    if (!firstAdult.gender)          updates.gender          = (primary as any).gender ?? '';
+    if (Object.keys(updates).length) updatePassenger(firstAdult.id, updates);
+  }, [travelers]);
+
+  // Detect country from device location → pre-fill nationality only
+  // (phone is pre-filled from profile; reading live store state avoids stale-closure overwrite)
   useEffect(() => {
     (async () => {
       try {
@@ -69,10 +109,18 @@ export default function PassengersScreen() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
         const [geo] = await Location.reverseGeocodeAsync(pos.coords);
         if (!geo?.isoCountryCode) return;
-        const countryCode = geo.isoCountryCode.toUpperCase();
-        passengers.forEach(p => {
-          if (!p.passportCountry) {
-            updatePassenger(p.id, { passportCountry: countryCode });
+        const iso = geo.isoCountryCode.toUpperCase();
+        const prefix = PHONE_PREFIX[iso] ?? null;
+        // Read current store state — not stale closure — so we don't overwrite profile phone
+        const current = useBookingStore.getState().passengers;
+        current.forEach(p => {
+          if (!p.passportCountry) updatePassenger(p.id, { passportCountry: iso });
+          if (prefix) {
+            if (!p.phone) {
+              updatePassenger(p.id, { phone: prefix + ' ' });
+            } else if (!p.phone.startsWith('+')) {
+              updatePassenger(p.id, { phone: prefix + ' ' + p.phone });
+            }
           }
         });
       } catch (_) {}
@@ -94,11 +142,11 @@ export default function PassengersScreen() {
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
-        paddingHorizontal: spacing.pagePadding, paddingVertical: 12,
+        paddingHorizontal: spacing.pagePadding, paddingVertical: 12, paddingRight: 72,
         borderBottomWidth: 1, borderBottomColor: colors.border,
       }}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={{ fontSize: 22, color: colors.accent }}>←</Text>
+          <Text style={{ fontSize: 24, fontWeight: '900', color: colors.accent }}>←</Text>
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>
@@ -108,7 +156,7 @@ export default function PassengersScreen() {
             Step 2 of 3
           </Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
+        <Image source={require('@/assets/logo.png')} style={{ position: 'absolute', right: spacing.pagePadding, top: '50%', marginTop: -37, width: 74, height: 74 }} resizeMode="contain" />
       </View>
 
       <ScrollView

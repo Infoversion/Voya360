@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { DuffelOffer, DuffelSegment } from '@/types/duffel';
 import { useSearchStore }  from '@/store/search.store';
 import { useBookingStore } from '@/store/booking.store';
-import { getOffer }        from '@/lib/duffel';
+import { getOffer, getSeatMaps, getAvailableServices, SeatMap, BaggageService } from '@/lib/duffel';
 import { Button }          from '@/components/ui/Button';
-import { BaggageAddons }  from '@/components/booking/BaggageAddons';
-import { VoyaCard }        from '@/components/voya/VoyaCard';
+import { AirlineLogo }    from '@/components/ui/AirlineLogo';
+import { PageLogo }       from '@/components/ui/PageLogo';
+import { SeatMapSelector } from '@/components/booking/SeatMapSelector';
+import { VoyaCard }         from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
 import { formatDuration, getIncludedCheckedBags, getFareType } from '@/engine/total-cost';
 import { SERVICE_FEE_USD } from '@/types/booking';
@@ -37,9 +39,18 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
           <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, lineHeight: 24 }}>
             {fmt(seg.departing_at)}
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
-            {seg.origin.iata_code} · {seg.origin.city_name}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+              {seg.origin.iata_code} · {seg.origin.city_name}
+            </Text>
+            {seg.origin_terminal && (
+              <View style={{ backgroundColor: '#F3F4F6', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted }}>
+                  T{seg.origin_terminal}
+                </Text>
+              </View>
+            )}
+          </View>
           <Text style={{ fontSize: 11, color: colors.textMuted }}>{seg.origin.name}</Text>
         </View>
       </View>
@@ -54,21 +65,34 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
           borderWidth: 1, borderColor: colors.border,
           padding: 10, marginVertical: 6,
         }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
-              {seg.marketing_carrier.name}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textMuted }}>
-              {seg.flight_number}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AirlineLogo
+                iataCode={seg.marketing_carrier.iata_code}
+                logoUrl={seg.marketing_carrier.logo_symbol_url}
+                size={28}
+                radius={5}
+              />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                {seg.marketing_carrier.name}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>
+              {seg.marketing_carrier.iata_code}{seg.marketing_carrier_flight_number}
             </Text>
           </View>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             <Text style={{ fontSize: 11, color: colors.textMuted }}>
               ⏱ {formatDuration(seg.duration)}
             </Text>
             {cabinClass && (
               <Text style={{ fontSize: 11, color: colors.textMuted, textTransform: 'capitalize' }}>
                 ✦ {cabinClass.replace('_', ' ')}
+              </Text>
+            )}
+            {seg.aircraft?.name && (
+              <Text style={{ fontSize: 11, color: '#2563EB' }}>
+                ✈ {seg.aircraft.name}
               </Text>
             )}
             {seg.operating_carrier?.iata_code !== seg.marketing_carrier?.iata_code && (
@@ -96,9 +120,18 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
           <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, lineHeight: 24 }}>
             {fmt(seg.arriving_at)}
           </Text>
-          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
-            {seg.destination.iata_code} · {seg.destination.city_name}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+              {seg.destination.iata_code} · {seg.destination.city_name}
+            </Text>
+            {seg.destination_terminal && (
+              <View style={{ backgroundColor: '#F3F4F6', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted }}>
+                  T{seg.destination_terminal}
+                </Text>
+              </View>
+            )}
+          </View>
           <Text style={{ fontSize: 11, color: colors.textMuted }}>{seg.destination.name}</Text>
         </View>
       </View>
@@ -147,14 +180,16 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
 export default function FlightReviewScreen() {
   const { offerId }       = useLocalSearchParams<{ offerId: string }>();
   const { offers }        = useSearchStore();
-  const { setOffer }      = useBookingStore();
-  const { bagCount }      = useSearchStore();
+  const { setOffer, passengers, selectedSeats, setSeat, selectedServices, setSelectedServices } = useBookingStore();
 
   const [offer, setLocalOffer] = useState<DuffelOffer | null>(
     () => offers?.find(o => o.id === offerId) ?? null,
   );
-  const [loading, setLoading] = useState(!offer);
-  const [error, setError]     = useState<string | null>(null);
+  const [loading, setLoading]           = useState(!offer);
+  const [error, setError]               = useState<string | null>(null);
+  const [seatMaps, setSeatMaps]         = useState<SeatMap[]>([]);
+  const [loadingSeats, setLoadingSeats] = useState(false);
+  const [baggageServices, setBaggageServices] = useState<BaggageService[]>([]);
 
   useEffect(() => {
     if (offer) { setOffer(offer); return; }
@@ -162,6 +197,18 @@ export default function FlightReviewScreen() {
       .then(o => { setLocalOffer(o); setOffer(o); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, [offerId]);
+
+  useEffect(() => {
+    if (!offer) return;
+    setLoadingSeats(true);
+    getSeatMaps(offer.id)
+      .then(setSeatMaps)
+      .catch(() => setSeatMaps([]))
+      .finally(() => setLoadingSeats(false));
+    getAvailableServices(offer.id)
+      .then(setBaggageServices)
+      .catch(() => setBaggageServices([]));
+  }, [offer?.id]);
 
   const { observation: voyaObs, dismiss: voyaDismiss } = useVoya('review');
 
@@ -187,25 +234,24 @@ export default function FlightReviewScreen() {
 
   const isRoundTrip    = offer.slices.length > 1;
   const fareType       = getFareType(offer);
-  const refund         = offer.conditions?.refund_before_departure;
-  const change         = offer.conditions?.change_before_departure;
   const includedBags   = getIncludedCheckedBags(offer);
-  const extraBags      = Math.max(0, bagCount - includedBags);
-  const baggageFee     = extraBags * 65;
   const baseFare       = parseFloat(offer.base_amount ?? offer.total_amount);
   const taxAmount      = parseFloat(offer.tax_amount ?? '0');
-  const totalAmount    = baseFare + taxAmount + SERVICE_FEE_USD + baggageFee;
+  const servicesFee    = selectedServices.reduce((sum, sel) => {
+    const svc = baggageServices.find(b => b.id === sel.id);
+    return sum + (svc ? parseFloat(svc.total_amount) * sel.quantity : 0);
+  }, 0);
+  const totalAmount    = baseFare + taxAmount + SERVICE_FEE_USD + servicesFee;
 
-  // Voya baggage tip
-  const bagTip = extraBags > 0
-    ? {
-        headline: 'Add bags now — it\'s cheaper',
-        body: `Adding ${extraBags} bag${extraBags > 1 ? 's' : ''} online now is typically $20–40 cheaper per bag than paying at the airport. Airlines charge $50–100 per bag at check-in. Our estimate: $65/bag.`,
-      }
-    : includedBags > 0
+  const bagTip = includedBags > 0
     ? {
         headline: `${includedBags} bag${includedBags > 1 ? 's' : ''} already included`,
         body: 'No extra baggage fees for this booking. You\'re all set — no need to pay at the airport.',
+      }
+    : baggageServices.length === 0
+    ? {
+        headline: 'Add bags at check-in if needed',
+        body: 'Airline baggage fees at the airport are typically $50–100 per bag. Adding online in advance is usually cheaper.',
       }
     : null;
 
@@ -214,7 +260,7 @@ export default function FlightReviewScreen() {
       {/* Header */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
-        paddingHorizontal: spacing.pagePadding, paddingVertical: 12,
+        paddingHorizontal: spacing.pagePadding, paddingVertical: 12, paddingRight: 72,
         borderBottomWidth: 1, borderBottomColor: colors.border,
         backgroundColor: colors.background,
       }}>
@@ -225,7 +271,7 @@ export default function FlightReviewScreen() {
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>Review your trip</Text>
           <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>Step 1 of 3 · Confirm details before paying</Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
+        <PageLogo variant="nav" />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
@@ -239,8 +285,12 @@ export default function FlightReviewScreen() {
 
         {/* ── ITINERARY ── */}
         {offer.slices.map((slice, si) => {
-          const firstSeg = slice.segments[0];
-          const stops    = slice.segments.length - 1;
+          if (!slice?.segments?.length) return null;
+          const firstSeg  = slice.segments[0];
+          const lastSeg   = slice.segments[slice.segments.length - 1];
+          const stops     = slice.segments.length - 1;
+          const carrier   = firstSeg.marketing_carrier;
+          const accentCol = si === 0 ? colors.accent : '#2563EB';
 
           return (
             <View key={slice.id} style={{
@@ -251,26 +301,51 @@ export default function FlightReviewScreen() {
             }}>
               {/* Slice header */}
               <View style={{
-                backgroundColor: isRoundTrip ? (si === 0 ? `${colors.accent}10` : '#EFF6FF') : `${colors.accent}10`,
-                paddingHorizontal: 14, paddingVertical: 10,
+                backgroundColor: si === 0 ? `${colors.accent}10` : '#EFF6FF',
+                paddingHorizontal: 14, paddingVertical: 12,
                 borderBottomWidth: 1, borderBottomColor: colors.border,
-                flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
               }}>
-                <View>
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: si === 0 ? colors.accent : '#2563EB', letterSpacing: 0.8 }}>
-                    {isRoundTrip ? (si === 0 ? 'OUTBOUND' : 'RETURN') : 'FLIGHT'}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 1 }}>
-                    {fmtDate(firstSeg.departing_at)}
-                  </Text>
+                {/* Row 1: label + airline */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: accentCol, letterSpacing: 0.8 }}>
+                      {isRoundTrip ? (si === 0 ? 'OUTBOUND' : 'RETURN') : 'FLIGHT'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 1 }}>
+                      {fmtDate(firstSeg.departing_at)}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AirlineLogo
+                      iataCode={carrier.iata_code}
+                      logoUrl={carrier.logo_symbol_url}
+                      size={28}
+                      radius={6}
+                    />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{carrier.name}</Text>
+                  </View>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text }}>
-                    {slice.origin.iata_code} ✈ {slice.destination.iata_code}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: stops === 0 ? colors.success : colors.textMuted }}>
-                    {formatDuration(slice.duration)} · {stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`}
-                  </Text>
+
+                {/* Row 2: times + route */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={{ fontSize: 22, fontWeight: '900', color: colors.text, letterSpacing: -0.5 }}>
+                      {fmt(firstSeg.departing_at)}
+                      <Text style={{ fontSize: 14, fontWeight: '400', color: colors.textMuted }}> → </Text>
+                      {fmt(lastSeg.arriving_at)}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                      {slice.origin.iata_code} → {slice.destination.iata_code}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                      {formatDuration(slice.duration)}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: stops === 0 ? colors.success : colors.textMuted, marginTop: 2 }}>
+                      {stops === 0 ? '✓ Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -295,6 +370,27 @@ export default function FlightReviewScreen() {
             </View>
           );
         })}
+
+        {/* ── SEAT SELECTION ── */}
+        <View style={{
+          marginHorizontal: spacing.pagePadding, marginTop: 16,
+          backgroundColor: colors.background,
+          borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
+        }}>
+          <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>SEAT SELECTION</Text>
+          </View>
+          <View style={{ padding: 14 }}>
+            <SeatMapSelector
+              seatMaps={seatMaps}
+              passengers={passengers}
+              selected={selectedSeats}
+              duffelPassengerIds={(offer.passengers ?? []).map(p => p.id)}
+              onSelect={setSeat}
+              loading={loadingSeats}
+            />
+          </View>
+        </View>
 
         {/* ── BAGGAGE ── */}
         {/* What's included from the offer */}
@@ -322,16 +418,98 @@ export default function FlightReviewScreen() {
                   <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 3 }}>
                     {coQty > 0 ? `✓ ${coQty} carry-on included` : '✗ No carry-on included'}
                   </Text>
+                  {(() => {
+                    const firstBag = offer.slices[0].segments[0].passengers[0]?.baggages.find(b => b.type === 'checked');
+                    return firstBag?.maximum_weight_kg ? (
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>
+                        Up to {firstBag.maximum_weight_kg}kg per bag
+                      </Text>
+                    ) : null;
+                  })()}
                 </View>
               );
             })()}
           </View>
         </View>
 
-        {/* Bag count stepper — writes back to search store so price summary stays in sync */}
-        <View style={{ paddingHorizontal: spacing.pagePadding, marginTop: 8 }}>
-          <BaggageAddons bagsIncluded={includedBags} maxBags={5} />
-        </View>
+        {/* Extra baggage add-ons — real Duffel prices */}
+        {baggageServices.length > 0 && (
+          <View style={{
+            marginHorizontal: spacing.pagePadding, marginTop: 8,
+            backgroundColor: colors.background,
+            borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
+          }}>
+            <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>ADD EXTRA BAGS</Text>
+            </View>
+            <View style={{ padding: 14, gap: 8 }}>
+              {baggageServices.map(svc => {
+                const qty = selectedServices.find(s => s.id === svc.id)?.quantity ?? 0;
+                const weightLabel = svc.metadata.maximum_weight_kg
+                  ? ` · up to ${svc.metadata.maximum_weight_kg}kg` : '';
+                const typeLabel = svc.metadata.type === 'checked' ? 'Checked bag' : 'Carry-on bag';
+                return (
+                  <View key={svc.id} style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    backgroundColor: qty > 0 ? `${colors.accent}08` : '#F9FAFB',
+                    borderRadius: 10, borderWidth: 1,
+                    borderColor: qty > 0 ? colors.accent : colors.border,
+                    padding: 12,
+                  }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
+                        {typeLabel}{weightLabel}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '700', marginTop: 2 }}>
+                        +{svc.total_currency} {parseFloat(svc.total_amount).toFixed(2)} per bag
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const next = selectedServices.filter(s => s.id !== svc.id);
+                          if (qty > 1) next.push({ id: svc.id, quantity: qty - 1 });
+                          setSelectedServices(next);
+                        }}
+                        disabled={qty === 0}
+                        style={{
+                          width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: qty === 0 ? '#F3F4F6' : `${colors.accent}20`,
+                        }}
+                      >
+                        <Text style={{ fontSize: 18, fontWeight: '700', color: qty === 0 ? '#D1D5DB' : colors.accent }}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text, minWidth: 16, textAlign: 'center' }}>
+                        {qty}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const next = selectedServices.filter(s => s.id !== svc.id);
+                          if (qty < svc.maximum_quantity) next.push({ id: svc.id, quantity: qty + 1 });
+                          setSelectedServices(next);
+                        }}
+                        disabled={qty >= svc.maximum_quantity}
+                        style={{
+                          width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: qty >= svc.maximum_quantity ? '#F3F4F6' : colors.accent,
+                        }}
+                      >
+                        <Text style={{ fontSize: 18, fontWeight: '700', color: qty >= svc.maximum_quantity ? '#D1D5DB' : '#fff' }}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+              {selectedServices.length > 0 && (
+                <View style={{ backgroundColor: '#F0FDF4', borderRadius: 8, padding: 10, marginTop: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: colors.success }}>
+                    ✓ Bags added to your booking — price included in total below
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Voya bag tip */}
         {bagTip && (
@@ -388,13 +566,13 @@ export default function FlightReviewScreen() {
                 ${SERVICE_FEE_USD.toFixed(2)}
               </Text>
             </View>
-            {extraBags > 0 && (
+            {selectedServices.length > 0 && (
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
-                  Added baggage · {extraBags} bag{extraBags > 1 ? 's' : ''} (est.)
+                  Extra baggage
                 </Text>
                 <Text style={{ fontSize: fontSize.label, fontWeight: '600', color: colors.warning }}>
-                  +${baggageFee.toFixed(2)}
+                  +${servicesFee.toFixed(2)}
                 </Text>
               </View>
             )}
@@ -406,11 +584,6 @@ export default function FlightReviewScreen() {
               </View>
               <Text style={{ fontSize: 28, fontWeight: '900', color: colors.accent }}>${Math.round(totalAmount)}</Text>
             </View>
-            {extraBags > 0 && (
-              <Text style={{ fontSize: 11, color: colors.textMuted }}>
-                * Baggage fee is an estimate. Final price confirmed at booking.
-              </Text>
-            )}
           </View>
         </View>
 

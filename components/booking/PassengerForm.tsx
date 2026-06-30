@@ -74,10 +74,11 @@ export function PassengerForm({ passenger, index, savedTravelers, onChange }: Pr
       savedTravelerId: t.id,
       givenName:       given ?? '',
       familyName:      rest.join(' '),
-      dateOfBirth:     t.date_of_birth ?? '',
-      passportNumber:  '',  // never prefill passport — Vault encrypted
-      passportCountry: t.passport_country ?? '',
-      passportExpiry:  t.passport_expiry ?? '',
+      dateOfBirth:     t.date_of_birth      ?? '',
+      gender:          t.gender             ?? '',
+      passportNumber:  t.passport_number    ?? '',
+      passportCountry: t.passport_country   ?? '',
+      passportExpiry:  t.passport_expiry    ?? '',
       dietary:         t.dietary_preference ?? '',
     });
   };
@@ -217,7 +218,7 @@ export function PassengerForm({ passenger, index, savedTravelers, onChange }: Pr
 
           <Input label="Phone (with country code) *" value={passenger.phone}
             onChangeText={v => onChange({ phone: v })}
-            keyboardType="phone-pad" placeholder="+1 555 000 0000" />
+            keyboardType="default" placeholder="+1 555 000 0000" autoCorrect={false} />
         </>
       )}
 

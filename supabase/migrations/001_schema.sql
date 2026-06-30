@@ -12,6 +12,7 @@ create table public.users (
   default_bag_count  int default 2,
   dietary_preference text check (dietary_preference in ('vegetarian','halal','kosher','vegan','none')),
   dietary_confirmed  bool default false,
+  avatar_url         text,
   created_at         timestamptz default now()
 );
 

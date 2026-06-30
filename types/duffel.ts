@@ -16,22 +16,26 @@ export interface DuffelSegmentPassenger {
   passenger_id: string;
   cabin_class:  string;
   baggages: Array<{
-    type:     'checked' | 'carry_on';
-    quantity: number;
+    type:               'checked' | 'carry_on';
+    quantity:           number;
+    maximum_weight_kg?: number | null;
   }>;
 }
 
 export interface DuffelSegment {
-  id:                string;
-  origin:            DuffelPlace;
-  destination:       DuffelPlace;
-  departing_at:      string;
-  arriving_at:       string;
-  duration:          string;
-  operating_carrier: DuffelAirline;
-  marketing_carrier: DuffelAirline;
-  flight_number:     string;
-  passengers:        DuffelSegmentPassenger[];
+  id:                               string;
+  origin:                           DuffelPlace;
+  destination:                      DuffelPlace;
+  departing_at:                     string;
+  arriving_at:                      string;
+  duration:                         string;
+  operating_carrier:                DuffelAirline;
+  marketing_carrier:                DuffelAirline;
+  marketing_carrier_flight_number:  string;
+  origin_terminal?:                 string | null;
+  destination_terminal?:            string | null;
+  passengers:                       DuffelSegmentPassenger[];
+  aircraft?:                        { iata_code: string; name: string } | null;
 }
 
 export interface DuffelSlice {

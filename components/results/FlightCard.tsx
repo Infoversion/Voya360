@@ -1,40 +1,16 @@
 import { View, Text, TouchableOpacity, Image, Modal, ScrollView } from 'react-native';
 import { useState } from 'react';
+
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DuffelOffer, DuffelSlice } from '@/types/duffel';
 import { calculateCost, formatDuration, getFareType } from '@/engine/total-cost';
 import { TrendArrow } from './TrendArrow';
 import { colors, fontSize, spacing } from '@/constants/design';
+import { AirlineLogo } from '@/components/ui/AirlineLogo';
 import type { PriceTrend } from '@/engine/price-trends';
 
 const SLICE_COLORS = ['#FFF8F0', '#EFF6FF']; // outbound: warm saffron tint · return: cool blue tint
-
-function AirlineLogo({ iataCode, logoUrl }: { iataCode: string; logoUrl: string | null }) {
-  const [failed, setFailed] = useState(false);
-
-  if (logoUrl && !failed) {
-    return (
-      <Image
-        source={{ uri: logoUrl }}
-        style={{ width: 26, height: 26, borderRadius: 5 }}
-        resizeMode="contain"
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-  return (
-    <View style={{
-      width: 26, height: 26, borderRadius: 5,
-      backgroundColor: `${colors.accent}20`,
-      alignItems: 'center', justifyContent: 'center',
-    }}>
-      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.accent }}>
-        {(iataCode ?? '??').slice(0, 2)}
-      </Text>
-    </View>
-  );
-}
 
 function fmt(time: string) {
   return new Date(time)
@@ -45,10 +21,13 @@ function fmt(time: string) {
 function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; label?: string; isReturn?: boolean }) {
   const [expanded, setExpanded] = useState(false);
 
-  const firstSeg = slice.segments[0];
-  const lastSeg  = slice.segments[slice.segments.length - 1];
-  const carrier  = firstSeg?.marketing_carrier;
-  const stops    = slice.segments.length - 1;
+  const firstSeg   = slice.segments[0];
+  const lastSeg    = slice.segments[slice.segments.length - 1];
+  const carrier    = firstSeg?.marketing_carrier;
+  const stops      = slice.segments.length - 1;
+  const flightNums = slice.segments
+    .map(s => `${s.marketing_carrier.iata_code}${s.marketing_carrier_flight_number}`)
+    .join(' · ');
 
   // Build stop details from intermediate segment boundaries
   const stopDetails = slice.segments.slice(0, -1).map((seg, i) => {
@@ -57,11 +36,15 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
       (new Date(nextSeg.departing_at).getTime() - new Date(seg.arriving_at).getTime()) / 60000,
     );
     return {
-      iataCode:    seg.destination.iata_code,
-      cityName:    seg.destination.city_name,
-      arriveAt:    seg.arriving_at,
-      departAt:    nextSeg.departing_at,
+      iataCode:          seg.destination.iata_code,
+      cityName:          seg.destination.city_name,
+      arriveAt:          seg.arriving_at,
+      departAt:          nextSeg.departing_at,
       layoverMins,
+      arrivalTerminal:   seg.destination_terminal ?? null,
+      departureTerminal: nextSeg.origin_terminal ?? null,
+      nextFlightNum:     `${nextSeg.marketing_carrier.iata_code}${nextSeg.marketing_carrier_flight_number}`,
+      nextAircraft:      nextSeg.aircraft?.name ?? null,
     };
   });
 
@@ -76,10 +59,15 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
       {/* Airline + duration */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <AirlineLogo iataCode={carrier?.iata_code ?? ''} logoUrl={carrier?.logo_symbol_url ?? null} />
+          <AirlineLogo iataCode={carrier?.iata_code ?? ''} logoUrl={carrier?.logo_symbol_url} size={26} radius={5} />
           <View>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>{carrier?.name ?? '—'}</Text>
-            <Text style={{ fontSize: 10, color: colors.textMuted }}>{firstSeg?.flight_number}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>
+              {carrier?.name ?? '—'}
+            </Text>
+            <Text style={{ fontSize: 10, color: colors.textMuted }}>
+              {flightNums}
+              {firstSeg?.aircraft?.name ? ` · ${firstSeg.aircraft.name}` : ''}
+            </Text>
           </View>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
@@ -147,17 +135,31 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
           {stopDetails.map((stop, i) => (
             <View key={`${stop.iataCode}-${i}`}>
               {i > 0 && <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 8 }} />}
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text, marginBottom: 6 }}>
-                {stop.iataCode} · {stop.cityName}
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.text }}>
+                  {stop.iataCode} · {stop.cityName}
+                </Text>
+                {stop.arrivalTerminal && (
+                  <View style={{ backgroundColor: '#F3F4F6', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textMuted }}>T{stop.arrivalTerminal}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 16, flexWrap: 'wrap' }}>
                 <View>
                   <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 1 }}>Arrives</Text>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{fmt(stop.arriveAt)}</Text>
                 </View>
                 <View>
                   <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 1 }}>Departs</Text>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{fmt(stop.departAt)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{fmt(stop.departAt)}</Text>
+                    {stop.departureTerminal && (
+                      <View style={{ backgroundColor: '#F3F4F6', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textMuted }}>T{stop.departureTerminal}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
                 <View>
                   <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 1 }}>Layover</Text>
@@ -166,6 +168,11 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
                   </Text>
                 </View>
               </View>
+              {stop.nextFlightNum && (
+                <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 4 }}>
+                  Next: {stop.nextFlightNum}{stop.nextAircraft ? ` · ${stop.nextAircraft}` : ''}
+                </Text>
+              )}
             </View>
           ))}
         </View>
@@ -338,7 +345,9 @@ export function FlightCard({
         borderColor,
         marginHorizontal: spacing.pagePadding,
         marginBottom:    12,
-        padding:         16,
+        paddingHorizontal: 16,
+        paddingTop:      12,
+        paddingBottom:   8,
         shadowColor:     '#000',
         shadowOpacity:   0.05,
         shadowRadius:    8,
@@ -392,18 +401,23 @@ export function FlightCard({
               {cost.bagsIncluded > 0 ? `${cost.bagsIncluded}✓` : '✗'}
             </Text>
           </View>
-          {/* Fare type icon */}
-          <Ionicons
-            name={fareType.refundable && fareType.changeable
-              ? 'shield-checkmark-outline'
-              : fareType.refundable
-              ? 'refresh-outline'
-              : fareType.changeable
-              ? 'swap-horizontal-outline'
-              : 'close-circle-outline'}
-            size={14}
-            color={fareType.color}
-          />
+          {/* Fare type icon — tappable to open detail sheet */}
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); setShowFare(true); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons
+              name={fareType.refundable && fareType.changeable
+                ? 'shield-checkmark-outline'
+                : fareType.refundable
+                ? 'refresh-outline'
+                : fareType.changeable
+                ? 'swap-horizontal-outline'
+                : 'close-circle-outline'}
+              size={14}
+              color={fareType.color}
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -435,32 +449,15 @@ export function FlightCard({
         </Text>
       </View>
 
-      {/* Sub-row: trend/warnings + baggage fee + fare chip */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+      {/* Trend arrow + avoided airport warning */}
+      {(trend !== 'stable' || hasAvoidedAirport) && (
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 6 }}>
           {trend !== 'stable' && <TrendArrow trend={trend} />}
           {hasAvoidedAirport && (
             <Text style={{ fontSize: 11, color: colors.warning, fontWeight: '600' }}>⚠ Avoid-list airport</Text>
           )}
-          {cost.baggageFee > 0 && (
-            <Text style={{ fontSize: 11, color: colors.warning }}>+${cost.baggageFee} bags</Text>
-          )}
         </View>
-        <TouchableOpacity
-          onPress={(e) => { e.stopPropagation?.(); setShowFare(true); }}
-          style={{
-            backgroundColor: fareType.bg,
-            borderRadius: 6,
-            paddingHorizontal: 8, paddingVertical: 3,
-            flexDirection: 'row', alignItems: 'center', gap: 4,
-          }}
-        >
-          <Text style={{ fontSize: 11, fontWeight: '700', color: fareType.color }}>
-            {fareType.label}
-          </Text>
-          <Text style={{ fontSize: 10, color: fareType.color, opacity: 0.7 }}>ⓘ</Text>
-        </TouchableOpacity>
-      </View>
+      )}
       <FareTypeSheet offer={offer} visible={showFare} onClose={() => setShowFare(false)} />
     </TouchableOpacity>
   );

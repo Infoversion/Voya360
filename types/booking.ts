@@ -1,6 +1,6 @@
 export type DietaryPreference = 'vegetarian' | 'halal' | 'kosher' | 'vegan' | 'none';
 export type SeatPreference    = 'window' | 'aisle' | 'none';
-export type BookingStatus     = 'confirmed' | 'cancelled' | 'refunded';
+export type BookingStatus     = 'confirmed' | 'cancelled' | 'refunded' | 'return_cancelled';
 export type CabinClass        = 'economy' | 'premium_economy' | 'business' | 'first';
 
 export interface UserProfile {
@@ -16,6 +16,7 @@ export interface UserProfile {
   dietary_preference:  DietaryPreference | null;
   dietary_confirmed:   boolean;
   push_token:          string | null;
+  avatar_url:          string | null;
   created_at:          string;
 }
 
@@ -27,6 +28,7 @@ export interface SavedTraveler {
   passport_number:    string | null;
   passport_expiry:    string | null;
   passport_country:   string | null;
+  gender:             'm' | 'f' | null;
   dietary_preference: DietaryPreference | null;
   seat_preference:    SeatPreference | null;
   is_primary:         boolean;

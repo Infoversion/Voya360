@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
-  View, Text, Image, KeyboardAvoidingView, Platform, ScrollView,
+  View, Text, Image, KeyboardAvoidingView, Platform, ScrollView, TextInput,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -10,19 +10,25 @@ import { Input } from '@/components/ui/Input';
 import { colors, fontSize, spacing } from '@/constants/design';
 
 export default function SignupScreen() {
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [email,     setEmail]     = useState('');
+  const [password,  setPassword]  = useState('');
+  const lastNameRef = useRef<TextInput>(null);
+  const emailRef    = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
   const { signUp, isLoading, error, clearError, emailConfirmPending } = useAuthStore();
 
-  const canSubmit = fullName.trim().length > 0
+  const canSubmit = firstName.trim().length > 0
     && email.trim().length > 0
     && password.length >= 8;
 
   const handleSignup = async () => {
     clearError();
     if (!canSubmit) return;
-    await signUp(email.trim().toLowerCase(), password, fullName.trim());
+    const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
+    await signUp(email.trim().toLowerCase(), password, fullName);
   };
 
   if (emailConfirmPending) {
@@ -41,20 +47,13 @@ export default function SignupScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.pagePadding }}
           keyboardShouldPersistTaps="handled"
         >
           <View style={{ alignItems: 'center', marginBottom: 32 }}>
-            <Image
-              source={require('@/assets/logo.png')}
-              style={{ width: 130, height: 130 }}
-              resizeMode="contain"
-            />
+            <Image source={require('@/assets/logo.png')} style={{ width: 130, height: 130 }} resizeMode="contain" />
             <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginTop: 10, letterSpacing: 0.2 }}>
               Book fast · Pay fair · Fly smarter
             </Text>
@@ -63,14 +62,32 @@ export default function SignupScreen() {
             Create your account
           </Text>
 
-          <Input
-            label="Full name"
-            value={fullName}
-            onChangeText={setFullName}
-            autoCapitalize="words"
-            autoComplete="name"
-            returnKeyType="next"
-          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="First name"
+                value={firstName}
+                onChangeText={setFirstName}
+                autoCapitalize="words"
+                autoComplete="given-name"
+                returnKeyType="next"
+                onSubmitEditing={() => lastNameRef.current?.focus()}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="Last name"
+                value={lastName}
+                onChangeText={setLastName}
+                autoCapitalize="words"
+                autoComplete="family-name"
+                returnKeyType="next"
+                ref={lastNameRef}
+                onSubmitEditing={() => emailRef.current?.focus()}
+              />
+            </View>
+          </View>
+
           <Input
             label="Email address"
             value={email}
@@ -79,6 +96,8 @@ export default function SignupScreen() {
             autoCapitalize="none"
             autoComplete="email"
             returnKeyType="next"
+            ref={emailRef}
+            onSubmitEditing={() => passwordRef.current?.focus()}
           />
           <Input
             label="Password"
@@ -87,6 +106,7 @@ export default function SignupScreen() {
             secureTextEntry
             autoComplete="new-password"
             returnKeyType="done"
+            ref={passwordRef}
             onSubmitEditing={handleSignup}
             error={error ?? undefined}
           />
@@ -97,29 +117,13 @@ export default function SignupScreen() {
           )}
 
           <View style={{ marginTop: 8 }}>
-            <Button
-              label="Create account"
-              onPress={handleSignup}
-              loading={isLoading}
-              disabled={!canSubmit}
-            />
+            <Button label="Create account" onPress={handleSignup} loading={isLoading} disabled={!canSubmit} />
           </View>
 
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'center',
-              marginTop: 24,
-              gap: 4,
-            }}
-          >
-            <Text style={{ fontSize: fontSize.body, color: colors.textMuted }}>
-              Already have an account?
-            </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, gap: 4 }}>
+            <Text style={{ fontSize: fontSize.body, color: colors.textMuted }}>Already have an account?</Text>
             <Link href="/(auth)/login">
-              <Text style={{ fontSize: fontSize.body, color: colors.accent, fontWeight: '600' }}>
-                Sign in
-              </Text>
+              <Text style={{ fontSize: fontSize.body, color: colors.accent, fontWeight: '600' }}>Sign in</Text>
             </Link>
           </View>
         </ScrollView>

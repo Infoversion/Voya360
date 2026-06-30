@@ -18,12 +18,15 @@ export function useSavedTravelers() {
   useEffect(() => { load(); }, [load]);
 
   const addTraveler = async (fields: Partial<SavedTraveler>): Promise<SavedTraveler | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
     const { data, error } = await supabase
       .from('saved_travelers')
-      .insert([fields])
+      .insert([{ ...fields, user_id: user.id }])
       .select()
       .single();
-    if (error || !data) return null;
+    if (error) { console.error('addTraveler error:', error); return null; }
+    if (!data) return null;
     await load();
     return data as SavedTraveler;
   };

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { UserProfile } from '@/types/booking';
+import { useSearchStore } from '@/store/search.store';
 
 interface AuthState {
   session:            Session | null;
@@ -35,7 +36,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .select('*')
       .eq('id', session.user.id)
       .single();
-    if (data) set({ profile: data as UserProfile });
+    if (data) {
+      set({ profile: data as UserProfile });
+      const bagCount = (data as UserProfile).default_bag_count;
+      if (bagCount != null) useSearchStore.getState().setBagCount(bagCount);
+    }
   },
 
   signIn: async (email, password) => {
@@ -81,7 +86,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .eq('id', session.user.id)
       .select()
       .single();
-    if (!error && data) set({ profile: data as UserProfile });
+    if (!error && data) {
+      set({ profile: data as UserProfile });
+      const bagCount = (data as UserProfile).default_bag_count;
+      if (bagCount != null) useSearchStore.getState().setBagCount(bagCount);
+    }
   },
 
   clearError: () => set({ error: null }),

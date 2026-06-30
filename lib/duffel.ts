@@ -113,6 +113,7 @@ export interface InitiateBookingParams {
   offerId:    string;
   passengers: OrderPassengerPayload[];
   bagCount:   number;
+  services?:  Array<{ id: string; quantity: number }>;
 }
 
 export type InitiateBookingResult =
@@ -121,4 +122,136 @@ export type InitiateBookingResult =
 
 export async function initiateBooking(params: InitiateBookingParams): Promise<InitiateBookingResult> {
   return proxyCall<InitiateBookingResult>('booking_initiate', params as unknown as Record<string, unknown>);
+}
+
+export interface DuffelSegment {
+  departing_at:                    string;
+  arriving_at:                     string;
+  origin_terminal:                 string | null;
+  destination_terminal:            string | null;
+  marketing_carrier?:              { iata_code: string; name?: string };
+  operating_carrier?:              { iata_code: string; name?: string };
+  marketing_carrier_flight_number?: string;
+  flight_number?:                   string;
+}
+
+export interface DuffelSlice {
+  id:           string;
+  origin:       { iata_code: string; name: string };
+  destination:  { iata_code: string; name: string };
+  departing_at: string | null;
+  segments:     DuffelSegment[];
+}
+
+export interface DuffelOrderDetail {
+  id:                string;
+  booking_reference: string;
+  slices:            DuffelSlice[];
+  passengers:        Array<{ id: string; type: string; given_name: string; family_name: string }>;
+  documents?:        Array<{ type: string; unique_identifier: string }>;
+}
+
+export async function getDuffelOrder(duffelOrderId: string): Promise<DuffelOrderDetail> {
+  return proxyCall<DuffelOrderDetail>('order_get', { duffelOrderId });
+}
+
+export interface OrderChangePreview {
+  changeOfferId: string;
+  refundAmount:  string;
+  penaltyAmount: string;
+  currency:      string;
+}
+
+export async function previewOrderChange(
+  duffelOrderId:  string,
+  removeSliceIds: string[],
+): Promise<OrderChangePreview> {
+  return proxyCall<OrderChangePreview>('order_change_preview', { duffelOrderId, removeSliceIds });
+}
+
+export async function confirmOrderChange(
+  changeOfferId: string,
+  duffelOrderId: string,
+  newStatus:     string,
+): Promise<void> {
+  await proxyCall<{ changed: boolean }>('order_change_confirm', { changeOfferId, duffelOrderId, newStatus });
+}
+
+export interface CancellationPreview {
+  cancellationId: string;
+  refundAmount:   string;
+  refundCurrency: string;
+  refundTo:       string;
+  expiresAt:      string | null;
+}
+
+export async function previewCancellation(duffelOrderId: string): Promise<CancellationPreview> {
+  return proxyCall<CancellationPreview>('order_cancel_preview', { duffelOrderId });
+}
+
+export async function confirmCancellation(cancellationId: string, duffelOrderId: string): Promise<void> {
+  await proxyCall<{ cancelled: boolean }>('order_cancel_confirm', { cancellationId, duffelOrderId });
+}
+
+export async function deleteAccount(): Promise<void> {
+  await proxyCall<{ deleted: boolean }>('delete_account', {});
+}
+
+// ── Seat maps ─────────────────────────────────────────────────────────────────
+
+export interface SeatService {
+  id:             string;
+  passenger_id:   string;
+  total_amount:   string;
+  total_currency: string;
+}
+
+export interface SeatElement {
+  type:                'seat' | 'empty' | 'bassinet' | 'lavatory' | 'galley' | 'closet' | 'stairs';
+  designator?:         string;
+  disclosures?:        string[];
+  available_services?: SeatService[];
+  exits?:              boolean;
+}
+
+export interface SeatMapRow {
+  sections: Array<{ elements: SeatElement[] }>;
+}
+
+export interface SeatMapCabin {
+  cabin_class: string;
+  rows:        SeatMapRow[];
+  aisles:      number[];
+  wings:       { first_row_index: number; last_row_index: number } | null;
+}
+
+export interface SeatMap {
+  id:         string;
+  segment_id: string;
+  slice_id:   string;
+  cabins:     SeatMapCabin[];
+}
+
+export async function getSeatMaps(offerId: string): Promise<SeatMap[]> {
+  return proxyCall<SeatMap[]>('seat_map_get', { offerId });
+}
+
+// ── Available services (extra bags, upgrades) ─────────────────────────────────
+
+export interface BaggageService {
+  id:               string;
+  type:             'baggage';
+  maximum_quantity: number;
+  metadata: {
+    type:              'checked' | 'carry_on';
+    maximum_weight_kg: number | null;
+  };
+  passenger_ids:  string[];
+  segment_ids:    string[];
+  total_amount:   string;
+  total_currency: string;
+}
+
+export async function getAvailableServices(offerId: string): Promise<BaggageService[]> {
+  return proxyCall<BaggageService[]>('available_services_get', { offerId });
 }

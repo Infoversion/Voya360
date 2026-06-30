@@ -32,6 +32,10 @@ create policy "bookings_select" on public.bookings
   for select to authenticated using ((select auth.uid()) = user_id);
 create policy "bookings_insert" on public.bookings
   for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "bookings_update" on public.bookings
+  for update to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
 
 -- booking_passengers: accessible if the booking belongs to user
 create policy "booking_passengers_select" on public.booking_passengers

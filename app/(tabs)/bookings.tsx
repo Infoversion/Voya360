@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
-import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useState, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Booking } from '@/types/booking';
 import { colors, fontSize, spacing } from '@/constants/design';
+import { PageLogo } from '@/components/ui/PageLogo';
 
 function statusPill(status: Booking['status']) {
-  const map = {
-    confirmed: { bg: '#D1FAE5', text: '#065F46' },
-    cancelled: { bg: '#FEE2E2', text: '#991B1B' },
-    refunded:  { bg: '#F3F4F6', text: '#6B7280' },
+  const map: Record<string, { bg: string; text: string }> = {
+    confirmed:        { bg: '#D1FAE5', text: '#065F46' },
+    cancelled:        { bg: '#FEE2E2', text: '#991B1B' },
+    return_cancelled: { bg: '#FEF3C7', text: '#92400E' },
+    refunded:         { bg: '#F3F4F6', text: '#6B7280' },
   };
   return map[status] ?? map.refunded;
 }
@@ -23,7 +25,7 @@ function BookingCard({ b }: { b: Booking }) {
 
   return (
     <TouchableOpacity
-      onPress={() => router.push({ pathname: '/booking/[bookingId]', params: { bookingId: b.id } })}
+      onPress={() => router.push({ pathname: '/booking/[bookingId]', params: { bookingId: b.duffel_order_id } })}
       activeOpacity={0.75}
       style={{
         backgroundColor: '#FFF',
@@ -91,23 +93,26 @@ export default function BookingsScreen() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading,  setLoading]  = useState(true);
 
-  useEffect(() => {
-    supabase
-      .from('bookings')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setBookings((data as Booking[]) ?? []);
-        setLoading(false);
-      });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      supabase
+        .from('bookings')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .then(({ data }) => {
+          setBookings((data as Booking[]) ?? []);
+          setLoading(false);
+        });
+    }, [])
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={{ padding: spacing.pagePadding, paddingBottom: 60 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <Text style={{ fontSize: fontSize.header, fontWeight: '800', color: colors.text }}>My Trips</Text>
-          <Image source={require('@/assets/logo.png')} style={{ width: 34, height: 34, borderRadius: 17 }} resizeMode="cover" />
+          <PageLogo variant="tab" />
         </View>
 
         {loading && (

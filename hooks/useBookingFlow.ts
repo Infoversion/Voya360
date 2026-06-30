@@ -9,7 +9,7 @@ import { useSearchStore } from '@/store/search.store';
 export function useBookingFlow() {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const {
-    selectedOffer, passengers,
+    selectedOffer,
     setConfirmed,
     setCreatingIntent, setConfirming, setError,
   } = useBookingStore();
@@ -21,9 +21,21 @@ export function useBookingFlow() {
     setError(null);
 
     try {
+      // Read fresh from store so any normalisation done just before this call is picked up
+      const freshPassengers = useBookingStore.getState().passengers;
+
+      // Build services array: seat selections + extra baggage services
+      const { selectedSeats, selectedServices } = useBookingStore.getState();
+      const seatServices = Object.values(selectedSeats).map(id => ({ id, quantity: 1 }));
+      // Merge: baggage services first (may have quantity > 1), then seat services
+      const mergedServices = [
+        ...selectedServices,
+        ...seatServices,
+      ];
+
       const result = await initiateBooking({
         offerId:    selectedOffer.id,
-        passengers: passengers.map(p => ({
+        passengers: freshPassengers.map(p => ({
           savedTravelerId: p.savedTravelerId,
           givenName:       p.givenName,
           familyName:      p.familyName,
@@ -34,15 +46,17 @@ export function useBookingFlow() {
           gender:          p.gender,
           email:           p.email,
           phone:           p.phone,
+          dietary:         p.dietary || null,
         })),
         bagCount,
+        services: mergedServices.length > 0 ? mergedServices : undefined,
       });
 
       // ── Sandbox: order created server-side, navigate directly ──────────
       if (result.mode === 'sandbox') {
         setConfirmed(result.orderId, result.pnr);
         setCreatingIntent(false);
-        router.replace(`/booking/${result.orderId}`);
+        router.replace(`/booking/${result.orderId}?new=1`);
         return;
       }
 
@@ -81,7 +95,7 @@ export function useBookingFlow() {
             clearInterval(pollInterval);
             setConfirmed(data.duffel_order_id, data.pnr ?? '');
             setConfirming(false);
-            router.replace(`/booking/${data.duffel_order_id}`);
+            router.replace(`/booking/${data.duffel_order_id}?new=1`);
           } else if (polls >= 30) {
             clearInterval(pollInterval);
             setConfirming(false);
@@ -99,7 +113,7 @@ export function useBookingFlow() {
       setConfirming(false);
       setError(err instanceof Error ? err.message : 'Booking failed');
     }
-  }, [selectedOffer, passengers, bagCount]);
+  }, [selectedOffer, bagCount]); // selectedSeats/selectedServices read via getState() inside callback
 
   return { startPayment };
 }

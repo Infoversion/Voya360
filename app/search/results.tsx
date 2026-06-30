@@ -1,5 +1,5 @@
 import { useRef, useState, useMemo } from 'react';
-import { View, Text, TextInput, Image, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Image, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSearchStore } from '@/store/search.store';
@@ -13,18 +13,19 @@ import { usePriceHistory } from '@/hooks/usePriceHistory';
 import { calculateCost }   from '@/engine/total-cost';
 import { getActiveEvents } from '@/engine/seasonal-events';
 import { colors, fontSize, spacing } from '@/constants/design';
+import { PageLogo } from '@/components/ui/PageLogo';
 import type { DuffelOffer } from '@/types/duffel';
 
 type SelectionMode = 'bundled' | 'stepwise';
 
 function outboundKey(offer: DuffelOffer): string {
   const seg = offer.slices[0]?.segments[0];
-  return `${seg?.marketing_carrier?.iata_code ?? ''}-${seg?.flight_number ?? ''}-${seg?.departing_at ?? ''}`;
+  return `${seg?.marketing_carrier?.iata_code ?? ''}-${seg?.marketing_carrier_flight_number ?? ''}-${seg?.departing_at ?? ''}`;
 }
 
 function returnKey(offer: DuffelOffer): string {
   const seg = offer.slices[1]?.segments[0];
-  return `${seg?.marketing_carrier?.iata_code ?? ''}-${seg?.flight_number ?? ''}-${seg?.departing_at ?? ''}`;
+  return `${seg?.marketing_carrier?.iata_code ?? ''}-${seg?.marketing_carrier_flight_number ?? ''}-${seg?.departing_at ?? ''}`;
 }
 
 function totalMinutes(offer: DuffelOffer): number {
@@ -74,10 +75,10 @@ export default function ResultsScreen() {
     });
   }, [sortedOffers, isRoundTrip]);
 
-  // ── Stepwise: all unique return flights from the search result ──
-  // We show every return option (not just those pairing with the chosen outbound)
-  // so the user has a full selection. On press we find the best bookable offer:
-  // exact outbound+return match first, then any offer with the chosen return.
+  // ── Stepwise: all unique return legs from all offers ──
+  // We show every unique return option so the user can pick freely.
+  // On selection we look for an exact outbound+return pair first.
+  // If none exists we warn the user before falling back to any-offer-with-that-return.
   const stepwiseReturns = useMemo(() => {
     if (!isRoundTrip || !sortedOffers || !chosenOutboundKey) return [];
     const seen = new Set<string>();
@@ -147,14 +148,35 @@ export default function ResultsScreen() {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
         return;
       }
-      // Step 2: find the best bookable offer for the chosen return.
-      // Prefer exact outbound+return pair; fall back to any offer with the chosen return.
-      const rKey   = returnKey(offer);
-      const allRaw = rawOffers ?? [];
-      const exactMatch   = allRaw.find(o => outboundKey(o) === chosenOutboundKey && returnKey(o) === rKey);
-      const returnMatch  = allRaw.find(o => returnKey(o) === rKey);
-      const best = exactMatch ?? returnMatch ?? offer;
-      router.push({ pathname: '/flight/[offerId]', params: { offerId: best.id } });
+      // Step 2: find the best bookable offer for this return.
+      // Prefer an exact outbound+return pair. If none exists, warn before falling back.
+      const rKey       = returnKey(offer);
+      const allRaw     = rawOffers ?? [];
+      const exactMatch = allRaw.find(o => outboundKey(o) === chosenOutboundKey && returnKey(o) === rKey);
+
+      if (exactMatch) {
+        router.push({ pathname: '/flight/[offerId]', params: { offerId: exactMatch.id } });
+        return;
+      }
+
+      // No combined ticket exists for this outbound+return pair.
+      const returnMatch = allRaw.find(o => returnKey(o) === rKey);
+      if (!returnMatch) {
+        router.push({ pathname: '/flight/[offerId]', params: { offerId: offer.id } });
+        return;
+      }
+
+      const chosenOutboundCarrier = chosenOutboundOffer?.slices[0]?.segments[0]?.marketing_carrier?.name ?? 'your chosen outbound';
+      const returnOfferOutboundCarrier = returnMatch.slices[0]?.segments[0]?.marketing_carrier?.name ?? 'a different airline';
+
+      Alert.alert(
+        'Combination not available',
+        `${chosenOutboundCarrier} outbound + this return aren't sold as a single ticket.\n\nThe closest option uses ${returnOfferOutboundCarrier} for the outbound instead. Continue?`,
+        [
+          { text: 'Change outbound', style: 'cancel', onPress: () => { setStep(1); setChosen(null); setChosenOffer(null); } },
+          { text: 'Continue anyway', onPress: () => router.push({ pathname: '/flight/[offerId]', params: { offerId: returnMatch.id } }) },
+        ],
+      );
       return;
     }
     router.push({ pathname: '/flight/[offerId]', params: { offerId: offer.id } });
@@ -195,8 +217,9 @@ export default function ResultsScreen() {
       <View style={{
         backgroundColor: colors.background,
         borderBottomWidth: 1, borderBottomColor: colors.border,
-        paddingHorizontal: spacing.pagePadding, paddingVertical: 12,
-        flexDirection: 'row', alignItems: 'center', gap: 12,
+        paddingHorizontal: spacing.pagePadding, paddingVertical: 6,
+        paddingRight: 72,
+        flexDirection: 'row', alignItems: 'center', gap: 10,
       }}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={{ fontSize: 24, fontWeight: '900', color: colors.accent }}>←</Text>
@@ -204,51 +227,22 @@ export default function ResultsScreen() {
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{origin?.iata}</Text>
-            <Text style={{ fontSize: 14, color: '#1E3A8A' }}>✈</Text>
+            <Text style={{ fontSize: 13, color: '#1E3A8A' }}>✈</Text>
             <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{destination?.iata}</Text>
             {isRoundTrip && (
               <>
-                <Text style={{ fontSize: 14, color: '#1E3A8A', transform: [{ scaleX: -1 }] }}>✈</Text>
+                <Text style={{ fontSize: 13, color: '#1E3A8A', transform: [{ scaleX: -1 }] }}>✈</Text>
                 <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>{origin?.iata}</Text>
               </>
             )}
           </View>
-          <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
+          <Text style={{ fontSize: 12, color: colors.textMuted }}>
             {depDate}{retDate ? ` – ${retDate}` : ''} · {paxSummary} · {cabinClass}
           </Text>
         </View>
-        <Image source={require('@/assets/logo.png')} style={{ width: 60, height: 60 }} resizeMode="contain" />
+        <PageLogo variant="nav" />
       </View>
 
-      {/* ── Round trip mode toggle ── */}
-      {isRoundTrip && (
-        <View style={{
-          flexDirection: 'row', backgroundColor: colors.background,
-          borderBottomWidth: 1, borderBottomColor: colors.border,
-          paddingHorizontal: spacing.pagePadding, paddingVertical: 10, gap: 8,
-        }}>
-          {([
-            { value: 'bundled',  label: "Voya's picks" },
-            { value: 'stepwise', label: 'Choose separately' },
-          ] as { value: SelectionMode; label: string }[]).map(opt => {
-            const active = mode === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                onPress={() => handleModeChange(opt.value)}
-                style={{
-                  flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
-                  backgroundColor: active ? colors.accent : '#F3F4F6',
-                }}
-              >
-                <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: active ? '#fff' : colors.textMuted }}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
 
       {/* ── Stepwise step header ── */}
       {isRoundTrip && mode === 'stepwise' && (
@@ -304,7 +298,7 @@ export default function ResultsScreen() {
                 </View>
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>
-                    {carrier?.name ?? '—'} · {seg?.flight_number}
+                    {carrier?.name ?? '—'} · {seg?.marketing_carrier_flight_number}
                   </Text>
                   <Text style={{ fontSize: 11, color: colors.textMuted }}>
                     {stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`}
@@ -330,8 +324,8 @@ export default function ResultsScreen() {
         );
       })()}
 
-      {/* ── Filter bar ── */}
-      <FilterBar />
+      {/* ── Filter bar (incl. mode toggle for round trips) ── */}
+      <FilterBar mode={mode} onMode={handleModeChange} isRoundTrip={isRoundTrip} />
 
       {/* ── Seasonal demand banner ── */}
       {seasonalEvents.length > 0 && (() => {
@@ -384,7 +378,7 @@ export default function ResultsScreen() {
           </Text>
           {displayOffers.length > 3 && (
             <TouchableOpacity
-              onPress={() => listRef.current?.scrollToEnd({ animated: true })}
+              onPress={() => listRef.current?.scrollToIndex({ index: displayOffers.length - 1, animated: true, viewPosition: 1 })}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 10 }}
             >
               <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600' }}>Jump to last</Text>

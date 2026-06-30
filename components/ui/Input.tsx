@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef } from 'react';
 import { View, Text, TextInput, type TextInputProps } from 'react-native';
 import { colors, fontSize, spacing } from '@/constants/design';
 
@@ -7,31 +7,19 @@ interface InputProps extends Omit<TextInputProps, 'style'> {
   error?: string;
 }
 
-export function Input({ label, error, ...props }: InputProps) {
+export const Input = forwardRef<TextInput, InputProps>(function Input({ label, error, ...props }, ref) {
   const [focused, setFocused] = useState(false);
 
   return (
     <View style={{ marginBottom: 16 }}>
-      <Text
-        style={{
-          fontSize: fontSize.label,
-          color: colors.textMuted,
-          marginBottom: 6,
-          fontWeight: '500',
-        }}
-      >
+      <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginBottom: 6, fontWeight: '500' }}>
         {label}
       </Text>
       <TextInput
+        ref={ref}
         {...props}
-        onFocus={(e) => {
-          setFocused(true);
-          props.onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setFocused(false);
-          props.onBlur?.(e);
-        }}
+        onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
+        onBlur={(e)  => { setFocused(false); props.onBlur?.(e); }}
         accessible
         accessibilityLabel={label}
         style={{
@@ -50,4 +38,4 @@ export function Input({ label, error, ...props }: InputProps) {
       )}
     </View>
   );
-}
+});
