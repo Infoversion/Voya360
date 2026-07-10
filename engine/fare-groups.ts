@@ -1,4 +1,5 @@
 import { DuffelOffer } from '@/types/duffel';
+import { getIncludedCheckedBags } from './total-cost';
 
 export interface FareGroup {
   key:    string;
@@ -56,11 +57,15 @@ export function groupOffersByFlight(offers: DuffelOffer[]): FareGroup[] {
 
 /**
  * Airline's marketed brand name if Duffel provides one, else the cabin
- * class capitalized ("Economy", "Premium Economy", "Business", "First").
+ * class capitalized ("Economy", "Premium Economy", "Business", "First")
+ * plus the included checked-bag count, since same-cabin fallback offers
+ * within a fare group are otherwise indistinguishable by label alone.
  */
 export function getFareBrandLabel(offer: DuffelOffer): string {
   const marketingName = offer.passengers[0]?.cabin_class_marketing_name;
   if (marketingName) return marketingName;
   const cabinClass = offer.slices[0]?.segments[0]?.passengers[0]?.cabin_class;
-  return CABIN_LABELS[cabinClass ?? ''] ?? 'Economy';
+  const cabinLabel = CABIN_LABELS[cabinClass ?? ''] ?? 'Economy';
+  const bags = getIncludedCheckedBags(offer);
+  return `${cabinLabel} · ${bags} bag${bags === 1 ? '' : 's'}`;
 }

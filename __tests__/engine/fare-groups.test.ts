@@ -8,6 +8,7 @@ function makeOffer(opts: {
   departingAt?:             string;
   cabinClassMarketingName?: string | null;
   cabinClass?:              string;
+  checkedBags?:             number;
 } = {}): DuffelOffer {
   const {
     id                      = 'offer-1',
@@ -16,6 +17,7 @@ function makeOffer(opts: {
     departingAt             = '2026-09-01T08:00:00',
     cabinClassMarketingName = null,
     cabinClass              = 'economy',
+    checkedBags             = 0,
   } = opts;
 
   const segment = {
@@ -28,7 +30,11 @@ function makeOffer(opts: {
     operating_carrier: { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier:  { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier_flight_number: flightNumber,
-    passengers: [{ passenger_id: 'pax-1', cabin_class: cabinClass, baggages: [] }],
+    passengers: [{
+      passenger_id: 'pax-1',
+      cabin_class:  cabinClass,
+      baggages:     checkedBags > 0 ? [{ type: 'checked' as const, quantity: checkedBags }] : [],
+    }],
   };
 
   return {
@@ -103,8 +109,29 @@ describe('getFareBrandLabel', () => {
     expect(getFareBrandLabel(offer)).toBe('Economy Flex');
   });
 
-  it('falls back to capitalized cabin class when marketing name is absent', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'premium_economy' });
-    expect(getFareBrandLabel(offer)).toBe('Premium Economy');
+  it('falls back to cabin class + included bag count when marketing name is absent', () => {
+    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'premium_economy', checkedBags: 0 });
+    expect(getFareBrandLabel(offer)).toBe('Premium Economy · 0 bags');
+  });
+
+  it('uses singular "bag" for exactly one included bag', () => {
+    const offer = makeOffer({ cabinClassMarketingName: null, checkedBags: 1 });
+    expect(getFareBrandLabel(offer)).toBe('Economy · 1 bag');
+  });
+
+  it('uses plural "bags" for more than one included bag', () => {
+    const offer = makeOffer({ cabinClassMarketingName: null, checkedBags: 2 });
+    expect(getFareBrandLabel(offer)).toBe('Economy · 2 bags');
+  });
+
+  it('differentiates two same-cabin fallback offers with different bag counts', () => {
+    const basic = makeOffer({ id: 'basic', cabinClassMarketingName: null, checkedBags: 0, totalAmount: 287 });
+    const flex  = makeOffer({ id: 'flex',  cabinClassMarketingName: null, checkedBags: 1, totalAmount: 462 });
+    expect(getFareBrandLabel(basic)).not.toBe(getFareBrandLabel(flex));
+  });
+
+  it('does not append a bag count when a real marketing name is present', () => {
+    const offer = makeOffer({ cabinClassMarketingName: 'Economy Flex', checkedBags: 2 });
+    expect(getFareBrandLabel(offer)).toBe('Economy Flex');
   });
 });
