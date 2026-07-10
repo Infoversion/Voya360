@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DuffelOffer, DuffelSlice } from '@/types/duffel';
 import { calculateCost, formatDuration, getFareType, getIncludedCarryOnBags } from '@/engine/total-cost';
-import { getFareBrandLabel } from '@/engine/fare-groups';
+import { getFareBrandLabel, getAdvanceSeatSelection } from '@/engine/fare-groups';
 import { TrendArrow } from './TrendArrow';
 import { colors, fontSize, spacing } from '@/constants/design';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
@@ -190,6 +190,11 @@ function FareTypeSheet({ offer, visible, onClose }: {
 }) {
   const ft          = getFareType(offer);
   const airlineName = offer.slices[0]?.segments[0]?.marketing_carrier?.name ?? 'This airline';
+  const sliceConditions  = offer.slices[0]?.conditions;
+  const amenities         = offer.slices[0]?.segments[0]?.passengers[0]?.cabin?.amenities;
+  const advanceSeatSelect = getAdvanceSeatSelection(offer);
+  const priorityBoarding  = sliceConditions?.priority_boarding ?? null;
+  const priorityCheckIn   = sliceConditions?.priority_check_in ?? null;
 
   const fmtFee = (amount: string | null) =>
     amount ? `$${parseFloat(amount).toFixed(0)} penalty fee applies` : 'No penalty fee';
@@ -218,7 +223,7 @@ function FareTypeSheet({ offer, visible, onClose }: {
               <View style={{ backgroundColor: ft.bg, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7 }}>
                 <Text style={{ fontSize: 15, fontWeight: '800', color: ft.color }}>{ft.label}</Text>
               </View>
-              <Text style={{ fontSize: 13, color: colors.textMuted }}>· {airlineName}</Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted }}>· {airlineName} · {getFareBrandLabel(offer)}</Text>
             </View>
 
             {/* Plain-language summary */}
@@ -274,6 +279,66 @@ function FareTypeSheet({ offer, visible, onClose }: {
               )}
             </View>
 
+            {/* Amenities — seat selection, boarding/check-in priority, seat comfort, wifi/power */}
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5, marginBottom: 8 }}>
+                WHAT'S INCLUDED
+              </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Ionicons name="grid-outline" size={16} color={advanceSeatSelect ? colors.success : colors.textMuted} />
+                <Text style={{ fontSize: 13, color: colors.text }}>
+                  {advanceSeatSelect ? 'Choose your seat in advance' : 'Seat assigned at check-in — no advance selection'}
+                </Text>
+              </View>
+
+              {priorityBoarding !== null && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="walk-outline" size={16} color={priorityBoarding ? colors.success : colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    {priorityBoarding ? 'Priority boarding' : 'No priority boarding'}
+                  </Text>
+                </View>
+              )}
+
+              {priorityCheckIn !== null && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="checkmark-done-outline" size={16} color={priorityCheckIn ? colors.success : colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    {priorityCheckIn ? 'Priority check-in' : 'No priority check-in'}
+                  </Text>
+                </View>
+              )}
+
+              {amenities?.seat && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="resize-outline" size={16} color={colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    Seat pitch {amenities.seat.pitch ?? '—'}"
+                    {amenities.seat.legroom ? ` · ${amenities.seat.legroom} legroom` : ''}
+                  </Text>
+                </View>
+              )}
+
+              {amenities?.wifi && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="wifi-outline" size={16} color={amenities.wifi.available ? colors.success : colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    {amenities.wifi.available ? 'Wifi available' : 'No wifi'}
+                  </Text>
+                </View>
+              )}
+
+              {amenities?.power && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="flash-outline" size={16} color={amenities.power.available ? colors.success : colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    {amenities.power.available ? 'Power outlet available' : 'No power outlet'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
             <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 14, lineHeight: 16 }}>
               * Policies shown are provided by {airlineName} via Duffel. Always review the airline's full conditions of carriage before booking.
             </Text>
@@ -306,8 +371,10 @@ function FareChipRow({
 }) {
   // Only show a carry-on icon if it actually differs across this flight's
   // fare brands — most groups won't have carry-on data at all, and showing
-  // an always-zero icon on every chip would just add noise.
-  const hasCarryOnData = group.some(o => getIncludedCarryOnBags(o) > 0);
+  // an always-zero icon on every chip would just add noise. Same rule for
+  // seat selection: only show if at least one brand in the group allows it.
+  const hasCarryOnData      = group.some(o => getIncludedCarryOnBags(o) > 0);
+  const hasSeatSelectionData = group.some(o => getAdvanceSeatSelection(o));
 
   return (
     <ScrollView
@@ -322,6 +389,7 @@ function FareChipRow({
         const price     = Math.round(cost.total);
         const ft        = getFareType(o);
         const carryOn   = getIncludedCarryOnBags(o);
+        const seatSelect = getAdvanceSeatSelection(o);
         const textColor = selected ? '#fff' : colors.text;
         const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
         return (
@@ -342,7 +410,7 @@ function FareChipRow({
             <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
               {getFareBrandLabel(o)}
             </Text>
-            {/* What's different: included bags (checked + carry-on) + change/refund flexibility, as icons */}
+            {/* What's different: included bags (checked + carry-on), change/refund flexibility, seat selection */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                 <Ionicons name="briefcase-outline" size={10} color={dimColor} />
@@ -365,6 +433,13 @@ function FareChipRow({
                 size={11}
                 color={selected ? '#fff' : ft.color}
               />
+              {hasSeatSelectionData && (
+                <Ionicons
+                  name="grid-outline"
+                  size={11}
+                  color={seatSelect ? (selected ? '#fff' : colors.success) : dimColor}
+                />
+              )}
             </View>
             <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
               ${price}

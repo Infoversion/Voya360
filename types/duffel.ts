@@ -12,9 +12,20 @@ export interface DuffelAirline {
   logo_lockup_url:  string | null;
 }
 
+export interface DuffelCabinAmenities {
+  seat?:  { pitch: string | null; legroom: string | null; type: string | null } | null;
+  wifi?:  { available: boolean; cost: string | null } | null;
+  power?: { available: boolean } | null;
+}
+
 export interface DuffelSegmentPassenger {
   passenger_id: string;
   cabin_class:  string;
+  cabin?: {
+    marketing_name?: string | null;
+    name?:           string | null;
+    amenities?:      DuffelCabinAmenities | null;
+  } | null;
   baggages: Array<{
     type:               'checked' | 'carry_on';
     quantity:           number;
@@ -38,12 +49,21 @@ export interface DuffelSegment {
   aircraft?:                        { iata_code: string; name: string } | null;
 }
 
+export interface DuffelSliceConditions {
+  change_before_departure?: { allowed: boolean; penalty_amount: string | null } | null;
+  priority_check_in?:       boolean | null;
+  priority_boarding?:       boolean | null;
+  advance_seat_selection?:  boolean | null;
+}
+
 export interface DuffelSlice {
-  id:          string;
-  origin:      DuffelPlace;
-  destination: DuffelPlace;
-  duration:    string;
-  segments:    DuffelSegment[];
+  id:               string;
+  origin:           DuffelPlace;
+  destination:      DuffelPlace;
+  duration:         string;
+  fare_brand_name?: string | null;
+  conditions?:      DuffelSliceConditions | null;
+  segments:         DuffelSegment[];
 }
 
 export interface DuffelOffer {

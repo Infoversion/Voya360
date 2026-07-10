@@ -1,4 +1,4 @@
-import { getFlightIdentityKey, groupOffersByFlight, getFareBrandLabel } from '@/engine/fare-groups';
+import { getFlightIdentityKey, groupOffersByFlight, getFareBrandLabel, getAdvanceSeatSelection } from '@/engine/fare-groups';
 import type { DuffelOffer } from '@/types/duffel';
 
 function makeOffer(opts: {
@@ -8,6 +8,8 @@ function makeOffer(opts: {
   departingAt?:             string;
   cabinClassMarketingName?: string | null;
   cabinClass?:              string;
+  fareBrandName?:           string | null;
+  advanceSeatSelection?:    boolean | null;
 } = {}): DuffelOffer {
   const {
     id                      = 'offer-1',
@@ -16,6 +18,8 @@ function makeOffer(opts: {
     departingAt             = '2026-09-01T08:00:00',
     cabinClassMarketingName = null,
     cabinClass              = 'economy',
+    fareBrandName           = null,
+    advanceSeatSelection    = null,
   } = opts;
 
   const segment = {
@@ -40,11 +44,18 @@ function makeOffer(opts: {
     expires_at:     '2026-09-02T00:00:00',
     conditions:     { change_before_departure: null, refund_before_departure: null },
     slices: [{
-      id:          'slice-1',
-      origin:      segment.origin,
-      destination: segment.destination,
-      duration:    'PT14H',
-      segments:    [segment],
+      id:               'slice-1',
+      origin:           segment.origin,
+      destination:      segment.destination,
+      duration:         'PT14H',
+      fare_brand_name:  fareBrandName,
+      conditions: {
+        change_before_departure: null,
+        priority_check_in:       null,
+        priority_boarding:       null,
+        advance_seat_selection:  advanceSeatSelection,
+      },
+      segments: [segment],
     }],
     passengers: [{ id: 'pax-1', type: 'adult', cabin_class_marketing_name: cabinClassMarketingName }],
   } as DuffelOffer;
@@ -98,18 +109,53 @@ describe('groupOffersByFlight', () => {
 });
 
 describe('getFareBrandLabel', () => {
-  it('returns the Duffel-provided marketing name when present', () => {
-    const offer = makeOffer({ cabinClassMarketingName: 'Economy Flex' });
+  it('prefers the slice-level fare_brand_name over the passenger-level marketing name', () => {
+    // Real Duffel data: cabin_class_marketing_name is often a generic bucket
+    // ("Economy") shared by every tier, while slices[].fare_brand_name is the
+    // airline's actual named fare ("Basic", "Economy", etc).
+    const offer = makeOffer({ fareBrandName: 'Basic', cabinClassMarketingName: 'Economy' });
+    expect(getFareBrandLabel(offer)).toBe('Basic');
+  });
+
+  it('falls back to the passenger-level marketing name when fare_brand_name is absent', () => {
+    const offer = makeOffer({ fareBrandName: null, cabinClassMarketingName: 'Economy Flex' });
     expect(getFareBrandLabel(offer)).toBe('Economy Flex');
   });
 
-  it('falls back to capitalized cabin class when marketing name is absent', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'premium_economy' });
+  it('falls back to capitalized cabin class when both are absent', () => {
+    const offer = makeOffer({ fareBrandName: null, cabinClassMarketingName: null, cabinClass: 'premium_economy' });
     expect(getFareBrandLabel(offer)).toBe('Premium Economy');
   });
 
   it('falls back to "Economy" for an unrecognized cabin class', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'something_unexpected' });
+    const offer = makeOffer({ fareBrandName: null, cabinClassMarketingName: null, cabinClass: 'something_unexpected' });
     expect(getFareBrandLabel(offer)).toBe('Economy');
+  });
+
+  it('distinguishes two same-cabin fare brands that only differ by fare_brand_name (the reported case)', () => {
+    // Reproduces the exact Frontier Airlines pair: both offers report
+    // cabin_class_marketing_name "Economy", but are genuinely different fares.
+    const basic   = makeOffer({ id: 'basic', fareBrandName: 'Basic',   cabinClassMarketingName: 'Economy' });
+    const economy = makeOffer({ id: 'econ',  fareBrandName: 'Economy', cabinClassMarketingName: 'Economy' });
+    expect(getFareBrandLabel(basic)).toBe('Basic');
+    expect(getFareBrandLabel(economy)).toBe('Economy');
+    expect(getFareBrandLabel(basic)).not.toBe(getFareBrandLabel(economy));
+  });
+});
+
+describe('getAdvanceSeatSelection', () => {
+  it('returns true when the slice allows advance seat selection', () => {
+    const offer = makeOffer({ advanceSeatSelection: true });
+    expect(getAdvanceSeatSelection(offer)).toBe(true);
+  });
+
+  it('returns false when the slice does not allow advance seat selection', () => {
+    const offer = makeOffer({ advanceSeatSelection: false });
+    expect(getAdvanceSeatSelection(offer)).toBe(false);
+  });
+
+  it('defaults to false when not specified', () => {
+    const offer = makeOffer({ advanceSeatSelection: null });
+    expect(getAdvanceSeatSelection(offer)).toBe(false);
   });
 });

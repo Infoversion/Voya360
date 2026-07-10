@@ -55,16 +55,33 @@ export function groupOffersByFlight(offers: DuffelOffer[]): FareGroup[] {
 }
 
 /**
- * Airline's marketed brand name if Duffel provides one, else the cabin
- * class capitalized ("Economy", "Premium Economy", "Business", "First").
- * Kept short and stable so it never overflows a chip — bag count and
- * fare flexibility (which can otherwise be the only real difference
- * between two same-cabin fallback offers) are shown as icons on the
- * chip itself (see FareChipRow in FlightCard.tsx), not appended here.
+ * Airline's actual named fare tier. Prefers slices[0].fare_brand_name —
+ * the authoritative field for this (confirmed against real Duffel data:
+ * a Frontier "Basic" vs "Economy" fare pair both reported the SAME
+ * generic passengers[].cabin_class_marketing_name ("Economy"), making
+ * that field useless for telling them apart). Falls back to the
+ * passenger-level marketing name, then to the cabin class capitalized
+ * ("Economy", "Premium Economy", "Business", "First").
+ * Kept short and stable so it never overflows a chip — other real
+ * differentiators (bags, fare flexibility, seat selection) are shown as
+ * icons on the chip itself (see FareChipRow in FlightCard.tsx), not
+ * appended here.
  */
 export function getFareBrandLabel(offer: DuffelOffer): string {
+  const sliceBrand = offer.slices[0]?.fare_brand_name;
+  if (sliceBrand) return sliceBrand;
   const marketingName = offer.passengers[0]?.cabin_class_marketing_name;
   if (marketingName) return marketingName;
   const cabinClass = offer.slices[0]?.segments[0]?.passengers[0]?.cabin_class;
   return CABIN_LABELS[cabinClass ?? ''] ?? 'Economy';
+}
+
+/**
+ * Whether this fare lets you pick your seat in advance (vs. an
+ * airline-assigned seat at check-in) — a real Duffel-exposed condition
+ * that can differ between same-cabin fare brands even when refund/change
+ * flexibility and included bags are identical.
+ */
+export function getAdvanceSeatSelection(offer: DuffelOffer): boolean {
+  return offer.slices[0]?.conditions?.advance_seat_selection ?? false;
 }
