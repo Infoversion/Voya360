@@ -98,14 +98,14 @@ describe('FlightCard', () => {
       <FlightCard offer={makeOffer({ baseFare: '400.00', includedBags: 1 })} bagCount={2} />,
     );
     expect(getByText('$475')).toBeTruthy();
-    expect(getByText(/incl. ~\$65 bags/)).toBeTruthy();
   });
 
-  it('shows no bag fee line when enough bags included', async () => {
-    const { queryByText } = await render(
-      <FlightCard offer={makeOffer({ includedBags: 2 })} bagCount={2} />,
+  it('shows a lower price when enough bags are already included', async () => {
+    // base $400 + $9.99 + $0 (2 included, 2 needed) = $409.99 → $410
+    const { getByText } = await render(
+      <FlightCard offer={makeOffer({ baseFare: '400.00', includedBags: 2 })} bagCount={2} />,
     );
-    expect(queryByText(/incl. ~\$/)).toBeNull();
+    expect(getByText('$410')).toBeTruthy();
   });
 
   // Badges
@@ -116,7 +116,7 @@ describe('FlightCard', () => {
     );
     expect(queryByText('Cheapest')).toBeNull();
     expect(queryByText('Fastest')).toBeNull();
-    expect(queryByText("Voya's pick")).toBeNull();
+    expect(queryByText('Voya pick')).toBeNull();
     expect(queryByText('Your airline')).toBeNull();
   });
 
@@ -134,11 +134,11 @@ describe('FlightCard', () => {
     expect(getByText('Fastest')).toBeTruthy();
   });
 
-  it("renders Voya's pick badge when isVoyaPick", async () => {
+  it('renders Voya pick badge when isVoyaPick', async () => {
     const { getByText } = await render(
       <FlightCard offer={makeOffer()} bagCount={2} isVoyaPick />,
     );
-    expect(getByText("Voya's pick")).toBeTruthy();
+    expect(getByText('Voya pick')).toBeTruthy();
   });
 
   it('renders Your airline badge when isPreferredAirline', async () => {
@@ -205,7 +205,7 @@ describe('FlightCard', () => {
       <FlightCard offer={makeOffer()} bagCount={2} onPress={onPress} />,
     );
     // Press propagates from any child text up to the outer TouchableOpacity.
-    fireEvent.press(getByText('Total you pay · incl. all taxes'));
+    await fireEvent.press(getByText('Total you pay'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
@@ -214,7 +214,7 @@ describe('FlightCard', () => {
     const { getByText } = await render(
       <FlightCard offer={makeOffer({ id: 'offer-abc' })} bagCount={2} />,
     );
-    fireEvent.press(getByText('Total you pay · incl. all taxes'));
+    await fireEvent.press(getByText('Total you pay'));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/flight/[offerId]',
       params:   { offerId: 'offer-abc' },
