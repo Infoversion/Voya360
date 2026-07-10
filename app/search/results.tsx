@@ -234,8 +234,8 @@ export default function ResultsScreen() {
     ? (step === 1 ? stepwiseOutbounds : stepwiseReturns)
     : bundledDisplayOffers;
 
-  const cheapestOffer = filteredOffers[0];
-  const fastestOffer  = [...filteredOffers].sort((a, b) => totalMinutes(a) - totalMinutes(b))[0];
+  const cheapestOffer = bundledDisplayOffers[0];
+  const fastestOffer  = [...bundledDisplayOffers].sort((a, b) => totalMinutes(a) - totalMinutes(b))[0];
 
   // Detect baggage flip: top result has more included bags than #2 and was "more expensive" in base fare
   const baggageFlipPair = useMemo(() => {

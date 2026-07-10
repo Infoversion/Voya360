@@ -196,6 +196,7 @@ export function CardDeckView({
             style={{ transform: [{ translateX }, { translateY }, { rotate }] }}
           >
             <FlightCard
+              key={topOffer.id}
               offer={topOffer}
               fareGroup={fareGroups?.[getFlightIdentityKey(topOffer)]}
               bagCount={bagCount}
