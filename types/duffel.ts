@@ -62,8 +62,9 @@ export interface DuffelOffer {
 }
 
 export interface DuffelOfferPassenger {
-  id:   string;
-  type: 'adult' | 'child' | 'infant_without_seat';
+  id:                          string;
+  type:                        'adult' | 'child' | 'infant_without_seat';
+  cabin_class_marketing_name?: string | null;
 }
 
 export interface DuffelOrderPassenger {
