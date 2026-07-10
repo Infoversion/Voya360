@@ -1,20 +1,30 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, Image, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSearchStore } from '@/store/search.store';
 import { useAuthStore }   from '@/store/auth.store';
+import { useVoyaStore }   from '@/store/voya.store';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { FlightCard }     from '@/components/results/FlightCard';
 import { FilterBar }      from '@/components/results/FilterBar';
+import { CardDeckView }   from '@/components/results/CardDeckView';
+import { Ionicons }       from '@expo/vector-icons';
 import { VoyaCard }       from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
 import { usePriceHistory } from '@/hooks/usePriceHistory';
 import { calculateCost }   from '@/engine/total-cost';
+import { groupOffersByFlight, getFlightIdentityKey } from '@/engine/fare-groups';
 import { getActiveEvents } from '@/engine/seasonal-events';
+import { supabase }        from '@/lib/supabase';
 import { colors, fontSize, spacing } from '@/constants/design';
 import { PageLogo } from '@/components/ui/PageLogo';
 import type { DuffelOffer } from '@/types/duffel';
+import type { VoyaObservationType } from '@/types/voya';
+import { VOYA_SCREEN_MAP } from '@/types/voya';
+
+let _searchObsCounter = 0;
+function nextSearchId() { return `voya_search_${++_searchObsCounter}`; }
 
 type SelectionMode = 'bundled' | 'stepwise';
 
@@ -40,6 +50,7 @@ export default function ResultsScreen() {
     sortedOffers, offers: rawOffers, isSearching, searchError,
     origin, destination, departureDate, returnDate, passengerCounts, cabinClass,
     isRoundTrip, bagCount, sortMode, sortDirection,
+    stopFilter, timeFilter, airlineFilter,
   } = useSearchStore();
 
   const paxSummary = [
@@ -47,12 +58,64 @@ export default function ResultsScreen() {
     passengerCounts.children > 0 ? `${passengerCounts.children} child${passengerCounts.children > 1 ? 'ren' : ''}` : null,
     passengerCounts.infants  > 0 ? `${passengerCounts.infants} infant${passengerCounts.infants > 1 ? 's' : ''}` : null,
   ].filter(Boolean).join(' · ');
-  const { profile }              = useAuthStore();
-  const { observation, dismiss } = useVoya('results');
-  const { createAlert }          = usePriceAlerts();
-  const { trend }                = usePriceHistory(origin?.iata, destination?.iata, cabinClass);
+  const { profile }                          = useAuthStore();
+  const { mergeSearchObservations }          = useVoyaStore();
+  const { observation, dismiss }             = useVoya('results');
+  const { createAlert }                      = usePriceAlerts();
+  const { trend }                            = usePriceHistory(origin?.iata, destination?.iata, cabinClass);
+  const lastSearchKeyRef                     = useRef('');
+
+  // Reset to stack view on each new search
+  useEffect(() => {
+    if (!isSearching && sortedOffers?.length) {
+      setViewMode('stack');
+      setStackIndex(0);
+    }
+  }, [sortedOffers]);
+
+  // Fire a search-context Voya call once per unique search when results load.
+  useEffect(() => {
+    if (isSearching || !sortedOffers?.length || !origin?.iata || !destination?.iata || !departureDate) return;
+    const searchKey = `${origin.iata}-${destination.iata}-${departureDate}-${cabinClass}`;
+    if (lastSearchKeyRef.current === searchKey) return;
+    lastSearchKeyRef.current = searchKey;
+
+    const lowestPriceUsd = sortedOffers[0]
+      ? parseFloat(sortedOffers[0].total_amount)
+      : null;
+    const events = getActiveEvents(destination.iata, new Date(departureDate + 'T00:00:00'));
+
+    supabase.functions.invoke('voya-init', {
+      body: {
+        searchContext: {
+          origin:         origin.iata,
+          destination:    destination.iata,
+          departureDate,
+          cabinClass,
+          lowestPriceUsd,
+          upcomingEvents: events,
+        },
+      },
+    }).then(({ data }) => {
+      if (!data?.observations?.length) return;
+      const obs = (data.observations as Array<{
+        type: VoyaObservationType; headline: string; body: string; priority: number;
+      }>).map(o => ({
+        id:        nextSearchId(),
+        type:      o.type,
+        headline:  o.headline,
+        body:      o.body,
+        screen:    VOYA_SCREEN_MAP[o.type] ?? 'results' as const,
+        priority:  o.priority,
+        dismissed: false,
+      }));
+      mergeSearchObservations(obs);
+    }).catch(() => {});
+  }, [isSearching, sortedOffers, origin?.iata, destination?.iata, departureDate, cabinClass]);
 
   const listRef = useRef<FlatList>(null);
+  const [viewMode, setViewMode]               = useState<'stack' | 'list'>('stack');
+  const [stackIndex, setStackIndex]           = useState(0);
   const [mode, setMode]                       = useState<SelectionMode>('bundled');
   const [step, setStep]                       = useState<1 | 2>(1);
   const [chosenOutboundKey, setChosen]        = useState<string | null>(null);
@@ -67,7 +130,7 @@ export default function ResultsScreen() {
   const stepwiseOutbounds = useMemo(() => {
     if (!isRoundTrip || !sortedOffers) return [];
     const seen = new Set<string>();
-    return sortedOffers.filter(o => {
+    return (sortedOffers).filter(o => {
       const key = outboundKey(o);
       if (seen.has(key)) return false;
       seen.add(key);
@@ -76,9 +139,6 @@ export default function ResultsScreen() {
   }, [sortedOffers, isRoundTrip]);
 
   // ── Stepwise: all unique return legs from all offers ──
-  // We show every unique return option so the user can pick freely.
-  // On selection we look for an exact outbound+return pair first.
-  // If none exists we warn the user before falling back to any-offer-with-that-return.
   const stepwiseReturns = useMemo(() => {
     if (!isRoundTrip || !sortedOffers || !chosenOutboundKey) return [];
     const seen = new Set<string>();
@@ -92,13 +152,90 @@ export default function ResultsScreen() {
       });
   }, [sortedOffers, isRoundTrip, chosenOutboundKey]);
 
-  const allOffers    = sortedOffers ?? [];
+  const allOffers = sortedOffers ?? [];
+
+  // Extract unique airlines from results for the airline filter chips
+  const availableAirlines = useMemo(() => {
+    const seen = new Map<string, { name: string; logoUrl: string | null }>();
+    for (const offer of allOffers) {
+      for (const slice of offer.slices) {
+        for (const seg of slice.segments) {
+          const { iata_code, name, logo_symbol_url } = seg.marketing_carrier;
+          if (!seen.has(iata_code)) seen.set(iata_code, { name, logoUrl: logo_symbol_url ?? null });
+        }
+      }
+    }
+    return Array.from(seen.entries())
+      .map(([iata, { name, logoUrl }]) => ({ iata, name, logoUrl }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allOffers]);
+
+  // Apply stop / time / airline filters on top of the sorted results
+  const filteredOffers = useMemo(() => {
+    let list = allOffers;
+
+    if (stopFilter !== 'all') {
+      list = list.filter(o => {
+        const stops = o.slices[0]?.segments.length - 1 ?? 0;
+        if (stopFilter === 'nonstop') return stops === 0;
+        if (stopFilter === '1stop')   return stops === 1;
+        if (stopFilter === '2plus')   return stops >= 2;
+        return true;
+      });
+    }
+
+    if (airlineFilter.length > 0) {
+      list = list.filter(o =>
+        o.slices.some(sl =>
+          sl.segments.some(s => airlineFilter.includes(s.marketing_carrier.iata_code))
+        )
+      );
+    }
+
+    if (timeFilter !== 'any') {
+      list = list.filter(o => {
+        const hour = new Date(o.slices[0]?.segments[0]?.departing_at ?? '').getHours();
+        if (timeFilter === 'morning')   return hour >= 6  && hour < 12;
+        if (timeFilter === 'afternoon') return hour >= 12 && hour < 18;
+        if (timeFilter === 'evening')   return hour >= 18;
+        return true;
+      });
+    }
+
+    return list;
+  }, [allOffers, stopFilter, airlineFilter, timeFilter]);
+
+  // Group same-flight offers that differ only by fare brand. Used for
+  // bundled-mode rendering only; stepwise mode ignores this.
+  const fareGroups = useMemo(
+    () => groupOffersByFlight(filteredOffers),
+    [filteredOffers],
+  );
+
+  const fareGroupByKey = useMemo(() => {
+    const map = new Map<string, DuffelOffer[]>();
+    for (const g of fareGroups) map.set(g.key, g.offers);
+    return map;
+  }, [fareGroups]);
+
+  const fareGroupsRecord = useMemo(() => {
+    const rec: Record<string, DuffelOffer[]> = {};
+    for (const g of fareGroups) rec[g.key] = g.offers;
+    return rec;
+  }, [fareGroups]);
+
+  // One representative (cheapest) offer per group, in group order.
+  const bundledDisplayOffers = useMemo(
+    () => fareGroups.map(g => g.offers[0]),
+    [fareGroups],
+  );
+
   const displayOffers: DuffelOffer[] = isRoundTrip && mode === 'stepwise'
     ? (step === 1 ? stepwiseOutbounds : stepwiseReturns)
-    : allOffers;
+    : bundledDisplayOffers;
 
-  const cheapestOffer = allOffers[0];
-  const fastestOffer  = [...allOffers].sort((a, b) => totalMinutes(a) - totalMinutes(b))[0];
+  const cheapestOffer = filteredOffers[0];
+  const fastestOffer  = [...filteredOffers].sort((a, b) => totalMinutes(a) - totalMinutes(b))[0];
 
   // Detect baggage flip: top result has more included bags than #2 and was "more expensive" in base fare
   const baggageFlipPair = useMemo(() => {
@@ -324,8 +461,12 @@ export default function ResultsScreen() {
         );
       })()}
 
-      {/* ── Filter bar (incl. mode toggle for round trips) ── */}
-      <FilterBar mode={mode} onMode={handleModeChange} isRoundTrip={isRoundTrip} />
+      {/* ── Filter bar ── */}
+      <FilterBar
+        availableAirlines={availableAirlines}
+        filteredCount={filteredOffers.length}
+        totalCount={allOffers.length}
+      />
 
       {/* ── Seasonal demand banner ── */}
       {seasonalEvents.length > 0 && (() => {
@@ -367,8 +508,8 @@ export default function ResultsScreen() {
         </View>
       )}
 
-      {/* ── Results count + jump to last ── */}
-      {displayOffers.length > 0 && (
+      {/* ── Results count + view controls ── */}
+      {displayOffers.length > 0 && viewMode === 'list' && (
         <View style={{ paddingHorizontal: spacing.pagePadding, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <Text style={{ fontSize: fontSize.label, color: colors.textMuted, flex: 1 }}>
             {displayOffers.length} {mode === 'stepwise' && step === 1 ? 'outbound' : mode === 'stepwise' && step === 2 ? 'return' : ''} flight{displayOffers.length !== 1 ? 's' : ''} · <Text style={{ color: colors.accent, fontWeight: '600' }}>
@@ -376,20 +517,54 @@ export default function ResultsScreen() {
               {sortDirection === 'asc' ? ' ↑' : ' ↓'}
             </Text>
           </Text>
-          {displayOffers.length > 3 && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {/* Stack view toggle */}
             <TouchableOpacity
-              onPress={() => listRef.current?.scrollToIndex({ index: displayOffers.length - 1, animated: true, viewPosition: 1 })}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 10 }}
+              onPress={() => { setViewMode('stack'); setStackIndex(0); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600' }}>Jump to last</Text>
-              <Text style={{ fontSize: 13, color: colors.textMuted }}>↓</Text>
+              <Ionicons name="layers-outline" size={15} color={colors.accent} />
+              <Text style={{ fontSize: 12, color: colors.accent, fontWeight: '600' }}>Stack</Text>
             </TouchableOpacity>
-          )}
+            {/* Jump to last */}
+            {displayOffers.length > 3 && (
+              <TouchableOpacity
+                onPress={() => {
+                  const last = displayOffers.length - 1;
+                  listRef.current?.scrollToIndex({ index: last, animated: true, viewPosition: 0 });
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
+              >
+                <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600' }}>Jump to last</Text>
+                <Text style={{ fontSize: 13, color: colors.textMuted }}>↓</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       )}
 
-      {/* ── Results list ── */}
+      {/* ── Results list / stack ── */}
       <View style={{ flex: 1, position: 'relative' }}>
+        {viewMode === 'stack' && displayOffers.length > 0 ? (
+          <CardDeckView
+            offers={displayOffers}
+            index={Math.min(stackIndex, displayOffers.length - 1)}
+            onIndexChange={setStackIndex}
+            onSwitchToList={() => setViewMode('list')}
+            bagCount={bagCount}
+            trend={trend}
+            showSliceIndex={showSliceIndex}
+            onCardPress={handleCardPress}
+            cheapestId={cheapestOffer?.id}
+            fastestId={fastestOffer?.id}
+            isBundled={mode === 'bundled'}
+            isRoundTrip={isRoundTrip}
+            preferredAirlines={preferredAirlines}
+            avoidedAirports={avoidedAirports}
+            fareGroups={mode === 'bundled' ? fareGroupsRecord : undefined}
+          />
+        ) : (
         <FlatList
           ref={listRef}
           key={listKey}
@@ -397,6 +572,18 @@ export default function ResultsScreen() {
           keyExtractor={item => `${item.id}-${showSliceIndex ?? 'all'}`}
           extraData={listKey}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: 32 }}
+          getItemLayout={(_data, index) => {
+            // Estimated collapsed card height: round-trip bundled shows 2 slices (taller).
+            // Bundled-mode cards (and one-way, which is always bundled-rendered) may also
+            // show a fare-brand chip row — add 34px for that when applicable.
+            const hasChipRow = mode === 'bundled' || !isRoundTrip;
+            const base = isRoundTrip && mode === 'bundled' ? 292 : 202;
+            const h = hasChipRow ? base + 34 : base;
+            return { length: h, offset: 8 + h * index, index };
+          }}
+          onScrollToIndexFailed={({ highestMeasuredFrameIndex }) => {
+            listRef.current?.scrollToIndex({ index: highestMeasuredFrameIndex, animated: true });
+          }}
           ListEmptyComponent={
             <View style={{ alignItems: 'center', padding: 48 }}>
               <Text style={{ fontSize: 40, marginBottom: 12 }}>✈️</Text>
@@ -511,27 +698,31 @@ export default function ResultsScreen() {
               )}
             </View>
           )}
-          renderItem={({ item, index }) => (
-            <FlightCard
-              offer={item}
-              bagCount={bagCount}
-              trend={trend}
-              showSliceIndex={showSliceIndex}
-              onPress={() => handleCardPress(item)}
-              isCheapest={item.id === cheapestOffer?.id && mode === 'bundled'}
-              isFastest={item.id === fastestOffer?.id && mode === 'bundled'}
-              isVoyaPick={mode === 'bundled' && isRoundTrip && index === 0}
-              isPreferredAirline={item.slices[0]?.segments.some(
-                (s: { marketing_carrier: { iata_code: string } }) => preferredAirlines.includes(s.marketing_carrier.iata_code),
-              )}
-              preferredAirlines={preferredAirlines}
-              avoidedAirports={avoidedAirports}
-              index={index}
-              total={displayOffers.length}
-            />
-          )}
+          renderItem={({ item, index }) => {
+            const group = mode === 'bundled' ? fareGroupByKey.get(getFlightIdentityKey(item)) : undefined;
+            return (
+              <FlightCard
+                offer={item}
+                fareGroup={group}
+                bagCount={bagCount}
+                trend={trend}
+                showSliceIndex={showSliceIndex}
+                onPress={handleCardPress}
+                isCheapest={item.id === cheapestOffer?.id && mode === 'bundled'}
+                isFastest={item.id === fastestOffer?.id && mode === 'bundled'}
+                isVoyaPick={mode === 'bundled' && isRoundTrip && index === 0}
+                isPreferredAirline={item.slices[0]?.segments.some(
+                  (s: { marketing_carrier: { iata_code: string } }) => preferredAirlines.includes(s.marketing_carrier.iata_code),
+                )}
+                preferredAirlines={preferredAirlines}
+                avoidedAirports={avoidedAirports}
+                index={index}
+                total={displayOffers.length}
+              />
+            );
+          }}
         />
-
+        )}
       </View>
     </SafeAreaView>
   );
