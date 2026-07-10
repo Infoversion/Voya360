@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DuffelOffer, DuffelSlice } from '@/types/duffel';
-import { calculateCost, formatDuration, getFareType } from '@/engine/total-cost';
+import { calculateCost, formatDuration, getFareType, getIncludedCarryOnBags } from '@/engine/total-cost';
 import { getFareBrandLabel } from '@/engine/fare-groups';
 import { TrendArrow } from './TrendArrow';
 import { colors, fontSize, spacing } from '@/constants/design';
@@ -304,6 +304,11 @@ function FareChipRow({
   bagCount:   number;
   onSelect:   (offerId: string) => void;
 }) {
+  // Only show a carry-on icon if it actually differs across this flight's
+  // fare brands — most groups won't have carry-on data at all, and showing
+  // an always-zero icon on every chip would just add noise.
+  const hasCarryOnData = group.some(o => getIncludedCarryOnBags(o) > 0);
+
   return (
     <ScrollView
       horizontal
@@ -316,6 +321,7 @@ function FareChipRow({
         const cost      = calculateCost(o, bagCount);
         const price     = Math.round(cost.total);
         const ft        = getFareType(o);
+        const carryOn   = getIncludedCarryOnBags(o);
         const textColor = selected ? '#fff' : colors.text;
         const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
         return (
@@ -336,12 +342,18 @@ function FareChipRow({
             <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
               {getFareBrandLabel(o)}
             </Text>
-            {/* What's different: included bags + change/refund flexibility, as icons */}
+            {/* What's different: included bags (checked + carry-on) + change/refund flexibility, as icons */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                 <Ionicons name="briefcase-outline" size={10} color={dimColor} />
                 <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{cost.bagsIncluded}</Text>
               </View>
+              {hasCarryOnData && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  <Ionicons name="bag-handle-outline" size={10} color={dimColor} />
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{carryOn}</Text>
+                </View>
+              )}
               <Ionicons
                 name={ft.refundable && ft.changeable
                   ? 'shield-checkmark-outline'

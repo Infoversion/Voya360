@@ -1,7 +1,11 @@
-import { calculateCost, shouldFlipSort, sortByTotalCost, formatDuration } from '@/engine/total-cost';
+import { calculateCost, shouldFlipSort, sortByTotalCost, formatDuration, getIncludedCarryOnBags } from '@/engine/total-cost';
 import type { DuffelOffer } from '@/types/duffel';
 
-function makeOffer(baseFare: number, checkedBags: number, id = 'offer'): DuffelOffer {
+function makeOffer(baseFare: number, checkedBags: number, id = 'offer', carryOnBags = 0): DuffelOffer {
+  const baggages: Array<{ type: 'checked' | 'carry_on'; quantity: number }> = [];
+  if (checkedBags > 0) baggages.push({ type: 'checked', quantity: checkedBags });
+  if (carryOnBags > 0) baggages.push({ type: 'carry_on', quantity: carryOnBags });
+
   return {
     id,
     total_amount: String(baseFare),
@@ -14,9 +18,7 @@ function makeOffer(baseFare: number, checkedBags: number, id = 'offer'): DuffelO
         id: 'seg1',
         passengers: [{
           id: 'p1', cabin_class: 'economy',
-          baggages: checkedBags > 0
-            ? [{ type: 'checked', quantity: checkedBags }]
-            : [],
+          baggages,
         }],
         marketing_carrier: { iata_code: 'EK', name: 'Emirates' } as any,
         operating_carrier:  { iata_code: 'EK', name: 'Emirates' } as any,
@@ -106,5 +108,20 @@ describe('formatDuration', () => {
 
   it('handles hours-only ISO duration', () => {
     expect(formatDuration('PT2H')).toBe('2h');
+  });
+});
+
+describe('getIncludedCarryOnBags', () => {
+  it('returns 0 when no carry-on baggage is included', () => {
+    expect(getIncludedCarryOnBags(makeOffer(800, 1, 'offer', 0))).toBe(0);
+  });
+
+  it('returns the included carry-on bag count', () => {
+    expect(getIncludedCarryOnBags(makeOffer(800, 0, 'offer', 1))).toBe(1);
+  });
+
+  it('does not confuse checked bags with carry-on bags', () => {
+    const offer = makeOffer(800, 2, 'offer', 1);
+    expect(getIncludedCarryOnBags(offer)).toBe(1);
   });
 });

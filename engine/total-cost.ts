@@ -18,6 +18,15 @@ export function getIncludedCheckedBags(offer: DuffelOffer): number {
   return checked.reduce((sum, b) => sum + b.quantity, 0);
 }
 
+export function getIncludedCarryOnBags(offer: DuffelOffer): number {
+  if (!offer.slices.length || !offer.slices[0].segments.length) return 0;
+  const seg = offer.slices[0].segments[0];
+  if (!seg.passengers.length) return 0;
+  const pax = seg.passengers[0];
+  const carryOn = pax.baggages.filter(b => b.type === 'carry_on');
+  return carryOn.reduce((sum, b) => sum + b.quantity, 0);
+}
+
 export function calculateCost(offer: DuffelOffer, bagCount: number = 2): CostBreakdown {
   const baseFare     = parseFloat(offer.total_amount);
   const serviceFee   = SERVICE_FEE_USD;
