@@ -1,5 +1,5 @@
 import { DuffelOffer } from '@/types/duffel';
-import { getIncludedCheckedBags } from './total-cost';
+import { getIncludedCheckedBags, getFareType } from './total-cost';
 
 export interface FareGroup {
   key:    string;
@@ -58,14 +58,18 @@ export function groupOffersByFlight(offers: DuffelOffer[]): FareGroup[] {
 /**
  * Airline's marketed brand name if Duffel provides one, else the cabin
  * class capitalized ("Economy", "Premium Economy", "Business", "First")
- * plus the included checked-bag count, since same-cabin fallback offers
- * within a fare group are otherwise indistinguishable by label alone.
+ * plus the included checked-bag count and fare-flexibility short code
+ * (FLEX/CHG/REF/NON-REF from getFareType). Same-cabin fallback offers
+ * within a fare group are otherwise indistinguishable by label alone —
+ * bag count and flexibility are the two traits that actually explain a
+ * price difference when Duffel gives no brand name.
  */
 export function getFareBrandLabel(offer: DuffelOffer): string {
   const marketingName = offer.passengers[0]?.cabin_class_marketing_name;
   if (marketingName) return marketingName;
   const cabinClass = offer.slices[0]?.segments[0]?.passengers[0]?.cabin_class;
   const cabinLabel = CABIN_LABELS[cabinClass ?? ''] ?? 'Economy';
-  const bags = getIncludedCheckedBags(offer);
-  return `${cabinLabel} · ${bags} bag${bags === 1 ? '' : 's'}`;
+  const bags  = getIncludedCheckedBags(offer);
+  const flex  = getFareType(offer).short;
+  return `${cabinLabel} · ${bags} bag${bags === 1 ? '' : 's'} · ${flex}`;
 }
