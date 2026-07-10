@@ -176,7 +176,7 @@ export default function ResultsScreen() {
 
     if (stopFilter !== 'all') {
       list = list.filter(o => {
-        const stops = o.slices[0]?.segments.length - 1 ?? 0;
+        const stops = (o.slices[0]?.segments.length ?? 1) - 1;
         if (stopFilter === 'nonstop') return stops === 0;
         if (stopFilter === '1stop')   return stops === 1;
         if (stopFilter === '2plus')   return stops >= 2;
