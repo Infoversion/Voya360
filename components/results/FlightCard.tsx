@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DuffelOffer, DuffelSlice } from '@/types/duffel';
 import { calculateCost, formatDuration, getFareType } from '@/engine/total-cost';
+import { getFareBrandLabel } from '@/engine/fare-groups';
 import { TrendArrow } from './TrendArrow';
 import { colors, fontSize, spacing } from '@/constants/design';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
@@ -58,19 +59,19 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
 
       {/* Airline + duration */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, marginRight: 8 }}>
           <AirlineLogo iataCode={carrier?.iata_code ?? ''} logoUrl={carrier?.logo_symbol_url} size={26} radius={5} />
-          <View>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>
               {carrier?.name ?? '—'}
             </Text>
-            <Text style={{ fontSize: 10, color: colors.textMuted }}>
+            <Text numberOfLines={1} style={{ fontSize: 10, color: colors.textMuted }}>
               {flightNums}
               {firstSeg?.aircraft?.name ? ` · ${firstSeg.aircraft.name}` : ''}
             </Text>
           </View>
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
           <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>
             {formatDuration(slice.duration)}
           </Text>
@@ -294,9 +295,56 @@ function FareTypeSheet({ offer, visible, onClose }: {
   );
 }
 
+// ── Fare brand chip row ───────────────────────────────────────────────────────
+function FareChipRow({
+  group, selectedId, bagCount, onSelect,
+}: {
+  group:      DuffelOffer[];
+  selectedId: string;
+  bagCount:   number;
+  onSelect:   (offerId: string) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginBottom: 8 }}
+      contentContainerStyle={{ gap: 6 }}
+    >
+      {group.map(o => {
+        const selected = o.id === selectedId;
+        const price    = Math.round(calculateCost(o, bagCount).total);
+        return (
+          <TouchableOpacity
+            key={o.id}
+            onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            style={{
+              borderRadius:      10,
+              paddingHorizontal: 10,
+              paddingVertical:   6,
+              borderWidth:       1.5,
+              borderColor:       selected ? colors.accent : colors.border,
+              backgroundColor:   selected ? colors.accent : colors.background,
+            }}
+          >
+            <Text style={{ fontSize: 11, fontWeight: '700', color: selected ? '#fff' : colors.text }}>
+              {getFareBrandLabel(o)}
+            </Text>
+            <Text style={{ fontSize: 10, fontWeight: '600', color: selected ? '#fff' : colors.textMuted }}>
+              ${price}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 interface Props {
   offer:               DuffelOffer;
   bagCount:            number;
+  fareGroup?:          DuffelOffer[];
   trend?:              PriceTrend;
   isCheapest?:         boolean;
   isFastest?:          boolean;
@@ -307,17 +355,19 @@ interface Props {
   showSliceIndex?:     number;
   index?:              number;
   total?:              number;
-  onPress?:            () => void;
+  onPress?:            (offer: DuffelOffer) => void;
 }
 
 export function FlightCard({
-  offer, bagCount, trend = 'stable',
+  offer, bagCount, fareGroup, trend = 'stable',
   isCheapest, isFastest, isPreferredAirline, isVoyaPick,
   preferredAirlines = [], avoidedAirports = [],
   showSliceIndex, index, total, onPress,
 }: Props) {
-  const cost          = calculateCost(offer, bagCount);
-  const fareType      = getFareType(offer);
+  const [activeOfferId, setActiveOfferId] = useState(fareGroup?.[0]?.id ?? offer.id);
+  const activeOffer   = fareGroup?.find(o => o.id === activeOfferId) ?? offer;
+  const cost          = calculateCost(activeOffer, bagCount);
+  const fareType      = getFareType(activeOffer);
   const isRoundTrip   = offer.slices.length > 1;
   const [showFare, setShowFare] = useState(false);
 
@@ -337,7 +387,7 @@ export function FlightCard({
 
   return (
     <TouchableOpacity
-      onPress={onPress ?? (() => router.push({ pathname: '/flight/[offerId]', params: { offerId: offer.id } }))}
+      onPress={() => (onPress ? onPress(activeOffer) : router.push({ pathname: '/flight/[offerId]', params: { offerId: activeOffer.id } }))}
       style={{
         backgroundColor: colors.background,
         borderRadius:    14,
@@ -438,6 +488,15 @@ export function FlightCard({
         );
       })}
 
+      {fareGroup && fareGroup.length > 1 && (
+        <FareChipRow
+          group={fareGroup}
+          selectedId={activeOfferId}
+          bagCount={bagCount}
+          onSelect={setActiveOfferId}
+        />
+      )}
+
       {/* Bottom row: label left, price right */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
         <View style={{ flex: 1 }}>
@@ -458,7 +517,7 @@ export function FlightCard({
           )}
         </View>
       )}
-      <FareTypeSheet offer={offer} visible={showFare} onClose={() => setShowFare(false)} />
+      <FareTypeSheet offer={activeOffer} visible={showFare} onClose={() => setShowFare(false)} />
     </TouchableOpacity>
   );
 }

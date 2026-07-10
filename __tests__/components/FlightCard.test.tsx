@@ -13,6 +13,7 @@ function makeOffer(opts: {
   includedBags?:  number;
   stops?:         number;
   isRoundTrip?:   boolean;
+  fareBrand?:     string;
 } = {}): DuffelOffer {
   const {
     id           = 'offer-1',
@@ -20,6 +21,7 @@ function makeOffer(opts: {
     includedBags = 1,
     stops        = 0,
     isRoundTrip  = false,
+    fareBrand    = undefined,
   } = opts;
 
   const makeSeg = (orig: string, dest: string, flight: string) => ({
@@ -71,7 +73,7 @@ function makeOffer(opts: {
     expires_at:     '2026-09-02T00:00:00',
     conditions:     { change_before_departure: null, refund_before_departure: null },
     slices:         isRoundTrip ? [outbound, returnSlice] : [outbound],
-    passengers:     [{ id: 'pax-1', type: 'adult' }],
+    passengers:     [{ id: 'pax-1', type: 'adult', cabin_class_marketing_name: fareBrand ?? null }],
   };
 }
 
@@ -235,5 +237,67 @@ describe('FlightCard', () => {
     );
     expect(queryByText('OUTBOUND')).toBeNull();
     expect(queryByText('RETURN')).toBeNull();
+  });
+
+  // Fare brand chip row
+
+  it('does not render a chip row when no fareGroup is provided', async () => {
+    const { queryByText } = await render(
+      <FlightCard offer={makeOffer({ baseFare: '400.00' })} bagCount={2} />,
+    );
+    expect(queryByText('Economy Basic')).toBeNull();
+  });
+
+  it('does not render a chip row when fareGroup has only one offer', async () => {
+    const solo = makeOffer({ id: 'offer-1', baseFare: '400.00', fareBrand: 'Economy Basic' });
+    const { queryByText } = await render(
+      <FlightCard offer={solo} bagCount={2} fareGroup={[solo]} />,
+    );
+    expect(queryByText('Economy Basic')).toBeNull();
+  });
+
+  it('renders a chip per fare brand and defaults to the cheapest', async () => {
+    const basic = makeOffer({ id: 'basic', baseFare: '400.00', fareBrand: 'Economy Basic', includedBags: 0 });
+    const flex  = makeOffer({ id: 'flex',  baseFare: '500.00', fareBrand: 'Economy Flex',  includedBags: 2 });
+    const { getByText, getAllByText } = await render(
+      <FlightCard offer={basic} bagCount={2} fareGroup={[basic, flex]} />,
+    );
+    expect(getByText('Economy Basic')).toBeTruthy();
+    expect(getByText('Economy Flex')).toBeTruthy();
+    // basic: 400 + 9.99 + 2 bags*$65 (0 included) = 539.99 → $540 (cheapest, selected by default)
+    // $540 renders twice: once as the basic chip's own price, once as the card's main total
+    // (basic is the selected/active offer), so both must be present.
+    expect(getAllByText('$540')).toHaveLength(2);
+  });
+
+  it('switches price when a different fare brand chip is tapped', async () => {
+    const basic = makeOffer({ id: 'basic', baseFare: '400.00', fareBrand: 'Economy Basic', includedBags: 0 });
+    const flex  = makeOffer({ id: 'flex',  baseFare: '500.00', fareBrand: 'Economy Flex',  includedBags: 2 });
+    const { getByText, getAllByText } = await render(
+      <FlightCard offer={basic} bagCount={2} fareGroup={[basic, flex]} />,
+    );
+    // basic selected by default: $540 on the basic chip AND as the main total (2 matches)
+    expect(getAllByText('$540')).toHaveLength(2);
+
+    await fireEvent.press(getByText('Economy Flex'));
+
+    // flex: 500 + 9.99 + 0 extra bags (2 included) = 509.99 → $510
+    // After switching, the main total now shows $510, matching the (now-selected) flex chip's
+    // own price — 2 matches. The basic chip keeps showing its own $540 regardless of selection,
+    // so $540 still has exactly 1 match (down from 2) rather than disappearing entirely.
+    expect(getAllByText('$510')).toHaveLength(2);
+    expect(getAllByText('$540')).toHaveLength(1);
+  });
+
+  it('calls onPress with the currently-selected fare brand offer', async () => {
+    const basic = makeOffer({ id: 'basic', baseFare: '400.00', fareBrand: 'Economy Basic' });
+    const flex  = makeOffer({ id: 'flex',  baseFare: '500.00', fareBrand: 'Economy Flex' });
+    const onPress = jest.fn();
+    const { getByText } = await render(
+      <FlightCard offer={basic} bagCount={2} fareGroup={[basic, flex]} onPress={onPress} />,
+    );
+    await fireEvent.press(getByText('Economy Flex'));
+    await fireEvent.press(getByText('Total you pay'));
+    expect(onPress).toHaveBeenCalledWith(expect.objectContaining({ id: 'flex' }));
   });
 });
