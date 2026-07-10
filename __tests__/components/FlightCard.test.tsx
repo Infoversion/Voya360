@@ -300,4 +300,45 @@ describe('FlightCard', () => {
     await fireEvent.press(getByText('Total you pay'));
     expect(onPress).toHaveBeenCalledWith(expect.objectContaining({ id: 'flex' }));
   });
+
+  it('opens the fare detail sheet for a long-pressed chip without changing the current selection', async () => {
+    const basic = makeOffer({ id: 'basic', baseFare: '400.00', fareBrand: 'Economy Basic', includedBags: 0 });
+    const flex  = makeOffer({ id: 'flex',  baseFare: '500.00', fareBrand: 'Economy Flex',  includedBags: 2 });
+    // Give flex fully-flexible conditions so its fare-type label differs from basic's
+    // (basic's default conditions are non-refundable/non-changeable).
+    flex.conditions = {
+      change_before_departure: { allowed: true, penalty_amount: null },
+      refund_before_departure: { allowed: true, penalty_amount: null },
+    };
+    const { getByText, getAllByText, queryByText } = await render(
+      <FlightCard offer={basic} bagCount={2} fareGroup={[basic, flex]} />,
+    );
+
+    // Sheet is closed initially
+    expect(queryByText('Fully flexible')).toBeNull();
+
+    await fireEvent(getByText('Economy Flex'), 'longPress');
+
+    // Sheet opens showing the long-pressed (flex) offer's own fare type
+    expect(getByText('Fully flexible')).toBeTruthy();
+
+    // Selection is unchanged — main total still reflects basic (the default), not flex.
+    // $540 appears twice regardless (basic's own chip price + the main total), same as
+    // the "renders a chip per fare brand" test above.
+    expect(getAllByText('$540')).toHaveLength(2);
+  });
+
+  it('closes the fare detail sheet opened from a chip long-press', async () => {
+    const basic = makeOffer({ id: 'basic', baseFare: '400.00', fareBrand: 'Economy Basic' });
+    const flex  = makeOffer({ id: 'flex',  baseFare: '500.00', fareBrand: 'Economy Flex' });
+    const { getByText, queryByText } = await render(
+      <FlightCard offer={basic} bagCount={2} fareGroup={[basic, flex]} />,
+    );
+
+    await fireEvent(getByText('Economy Flex'), 'longPress');
+    expect(queryByText('WHAT\'S INCLUDED')).toBeTruthy();
+
+    await fireEvent.press(getByText('Got it'));
+    expect(queryByText('WHAT\'S INCLUDED')).toBeNull();
+  });
 });

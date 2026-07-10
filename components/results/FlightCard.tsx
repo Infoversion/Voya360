@@ -374,6 +374,11 @@ function FareChipRow({
   // sometimes show identical values on every chip and explain nothing.
   const diff = getFareDifferences(group);
 
+  // Long-pressing any chip previews its full fare details without changing
+  // the current selection — lets the user check what a pricier brand
+  // includes before deciding whether to switch to it.
+  const [detailOffer, setDetailOffer] = useState<DuffelOffer | null>(null);
+
   return (
     <View style={{ marginBottom: 8 }}>
       <ScrollView
@@ -394,6 +399,7 @@ function FareChipRow({
             <TouchableOpacity
               key={o.id}
               onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
+              onLongPress={(e) => { e?.stopPropagation?.(); setDetailOffer(o); }}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
               style={{
                 minWidth:          88,
@@ -463,6 +469,10 @@ function FareChipRow({
         <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 4, fontStyle: 'italic' }}>
           No difference found in baggage, flexibility, or amenities between these fares — price is the only difference we can see.
         </Text>
+      )}
+
+      {detailOffer && (
+        <FareTypeSheet offer={detailOffer} visible onClose={() => setDetailOffer(null)} />
       )}
     </View>
   );
