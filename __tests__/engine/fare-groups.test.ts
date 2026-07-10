@@ -8,9 +8,6 @@ function makeOffer(opts: {
   departingAt?:             string;
   cabinClassMarketingName?: string | null;
   cabinClass?:              string;
-  checkedBags?:             number;
-  refundable?:              boolean;
-  changeable?:              boolean;
 } = {}): DuffelOffer {
   const {
     id                      = 'offer-1',
@@ -19,9 +16,6 @@ function makeOffer(opts: {
     departingAt             = '2026-09-01T08:00:00',
     cabinClassMarketingName = null,
     cabinClass              = 'economy',
-    checkedBags             = 0,
-    refundable              = false,
-    changeable              = false,
   } = opts;
 
   const segment = {
@@ -34,11 +28,7 @@ function makeOffer(opts: {
     operating_carrier: { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier:  { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier_flight_number: flightNumber,
-    passengers: [{
-      passenger_id: 'pax-1',
-      cabin_class:  cabinClass,
-      baggages:     checkedBags > 0 ? [{ type: 'checked' as const, quantity: checkedBags }] : [],
-    }],
+    passengers: [{ passenger_id: 'pax-1', cabin_class: cabinClass, baggages: [] }],
   };
 
   return {
@@ -48,10 +38,7 @@ function makeOffer(opts: {
     base_amount:    String(totalAmount),
     tax_amount:     '0.00',
     expires_at:     '2026-09-02T00:00:00',
-    conditions: {
-      change_before_departure: changeable ? { allowed: true, penalty_amount: null } : null,
-      refund_before_departure: refundable ? { allowed: true, penalty_amount: null } : null,
-    },
+    conditions:     { change_before_departure: null, refund_before_departure: null },
     slices: [{
       id:          'slice-1',
       origin:      segment.origin,
@@ -116,48 +103,13 @@ describe('getFareBrandLabel', () => {
     expect(getFareBrandLabel(offer)).toBe('Economy Flex');
   });
 
-  it('falls back to cabin class + bag count + fare flexibility when marketing name is absent', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'premium_economy', checkedBags: 0 });
-    expect(getFareBrandLabel(offer)).toBe('Premium Economy · 0 bags · NON-REF');
+  it('falls back to capitalized cabin class when marketing name is absent', () => {
+    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'premium_economy' });
+    expect(getFareBrandLabel(offer)).toBe('Premium Economy');
   });
 
-  it('uses singular "bag" for exactly one included bag', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, checkedBags: 1 });
-    expect(getFareBrandLabel(offer)).toBe('Economy · 1 bag · NON-REF');
-  });
-
-  it('uses plural "bags" for more than one included bag', () => {
-    const offer = makeOffer({ cabinClassMarketingName: null, checkedBags: 2 });
-    expect(getFareBrandLabel(offer)).toBe('Economy · 2 bags · NON-REF');
-  });
-
-  it('appends the fare-flexibility short code (FLEX/CHG/REF/NON-REF)', () => {
-    const flex = makeOffer({ cabinClassMarketingName: null, refundable: true, changeable: true });
-    const chg  = makeOffer({ cabinClassMarketingName: null, refundable: false, changeable: true });
-    const ref  = makeOffer({ cabinClassMarketingName: null, refundable: true, changeable: false });
-    expect(getFareBrandLabel(flex)).toBe('Economy · 0 bags · FLEX');
-    expect(getFareBrandLabel(chg)).toBe('Economy · 0 bags · CHG');
-    expect(getFareBrandLabel(ref)).toBe('Economy · 0 bags · REF');
-  });
-
-  it('differentiates two same-cabin fallback offers with different bag counts', () => {
-    const basic = makeOffer({ id: 'basic', cabinClassMarketingName: null, checkedBags: 0, totalAmount: 287 });
-    const flex  = makeOffer({ id: 'flex',  cabinClassMarketingName: null, checkedBags: 1, totalAmount: 462 });
-    expect(getFareBrandLabel(basic)).not.toBe(getFareBrandLabel(flex));
-  });
-
-  it('differentiates two same-cabin same-bag fallback offers by fare flexibility (the reported ambiguous case)', () => {
-    // Same cabin, same 0 included bags, different price ($287 vs $462) — the only
-    // real difference Duffel exposes is refund/change flexibility.
-    const basic = makeOffer({ id: 'basic', cabinClassMarketingName: null, checkedBags: 0, totalAmount: 287, refundable: false, changeable: false });
-    const flex  = makeOffer({ id: 'flex',  cabinClassMarketingName: null, checkedBags: 0, totalAmount: 462, refundable: true,  changeable: true });
-    expect(getFareBrandLabel(basic)).not.toBe(getFareBrandLabel(flex));
-    expect(getFareBrandLabel(basic)).toBe('Economy · 0 bags · NON-REF');
-    expect(getFareBrandLabel(flex)).toBe('Economy · 0 bags · FLEX');
-  });
-
-  it('does not append bag count or fare flexibility when a real marketing name is present', () => {
-    const offer = makeOffer({ cabinClassMarketingName: 'Economy Flex', checkedBags: 2, refundable: true, changeable: true });
-    expect(getFareBrandLabel(offer)).toBe('Economy Flex');
+  it('falls back to "Economy" for an unrecognized cabin class', () => {
+    const offer = makeOffer({ cabinClassMarketingName: null, cabinClass: 'something_unexpected' });
+    expect(getFareBrandLabel(offer)).toBe('Economy');
   });
 });

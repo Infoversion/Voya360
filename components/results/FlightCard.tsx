@@ -312,14 +312,19 @@ function FareChipRow({
       contentContainerStyle={{ gap: 6 }}
     >
       {group.map(o => {
-        const selected = o.id === selectedId;
-        const price    = Math.round(calculateCost(o, bagCount).total);
+        const selected  = o.id === selectedId;
+        const cost      = calculateCost(o, bagCount);
+        const price     = Math.round(cost.total);
+        const ft        = getFareType(o);
+        const textColor = selected ? '#fff' : colors.text;
+        const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
         return (
           <TouchableOpacity
             key={o.id}
             onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
             hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             style={{
+              minWidth:          88,
               borderRadius:      10,
               paddingHorizontal: 10,
               paddingVertical:   6,
@@ -328,10 +333,28 @@ function FareChipRow({
               backgroundColor:   selected ? colors.accent : colors.background,
             }}
           >
-            <Text style={{ fontSize: 11, fontWeight: '700', color: selected ? '#fff' : colors.text }}>
+            <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
               {getFareBrandLabel(o)}
             </Text>
-            <Text style={{ fontSize: 10, fontWeight: '600', color: selected ? '#fff' : colors.textMuted }}>
+            {/* What's different: included bags + change/refund flexibility, as icons */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                <Ionicons name="briefcase-outline" size={10} color={dimColor} />
+                <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{cost.bagsIncluded}</Text>
+              </View>
+              <Ionicons
+                name={ft.refundable && ft.changeable
+                  ? 'shield-checkmark-outline'
+                  : ft.refundable
+                  ? 'refresh-outline'
+                  : ft.changeable
+                  ? 'swap-horizontal-outline'
+                  : 'close-circle-outline'}
+                size={11}
+                color={selected ? '#fff' : ft.color}
+              />
+            </View>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
               ${price}
             </Text>
           </TouchableOpacity>
