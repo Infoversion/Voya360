@@ -1,4 +1,5 @@
 import { DuffelOffer } from '@/types/duffel';
+import { getIncludedCheckedBags, getIncludedCarryOnBags, getFareType } from './total-cost';
 
 export interface FareGroup {
   key:    string;
@@ -84,4 +85,79 @@ export function getFareBrandLabel(offer: DuffelOffer): string {
  */
 export function getAdvanceSeatSelection(offer: DuffelOffer): boolean {
   return offer.slices[0]?.conditions?.advance_seat_selection ?? false;
+}
+
+export interface FareAttributes {
+  bags:             number;
+  carryOn:          number;
+  flexShort:        string; // FLEX | CHG | REF | NON-REF, from getFareType
+  seatSelection:    boolean;
+  priorityBoarding: boolean | null;
+  priorityCheckIn:  boolean | null;
+  wifiAvailable:    boolean | null;
+  powerAvailable:   boolean | null;
+}
+
+/**
+ * Every attribute of an offer that could plausibly explain a price
+ * difference between two fare brands of the same flight. Used by
+ * getFareDifferences to find which of these actually vary within a
+ * fare group, instead of guessing at a fixed set to display.
+ */
+export function getFareAttributes(offer: DuffelOffer): FareAttributes {
+  const sliceConditions = offer.slices[0]?.conditions;
+  const amenities       = offer.slices[0]?.segments[0]?.passengers[0]?.cabin?.amenities;
+
+  return {
+    bags:             getIncludedCheckedBags(offer),
+    carryOn:          getIncludedCarryOnBags(offer),
+    flexShort:        getFareType(offer).short,
+    seatSelection:    getAdvanceSeatSelection(offer),
+    priorityBoarding: sliceConditions?.priority_boarding ?? null,
+    priorityCheckIn:  sliceConditions?.priority_check_in ?? null,
+    wifiAvailable:    amenities?.wifi?.available  ?? null,
+    powerAvailable:   amenities?.power?.available ?? null,
+  };
+}
+
+export interface FareDifferences {
+  bags:             boolean;
+  carryOn:          boolean;
+  flexibility:      boolean;
+  seatSelection:    boolean;
+  priorityBoarding: boolean;
+  priorityCheckIn:  boolean;
+  wifi:             boolean;
+  power:            boolean;
+  anyDifference:    boolean;
+}
+
+/**
+ * Compares every offer in a fare group across every attribute
+ * getFareAttributes reads, and reports which ones actually vary. A field
+ * is only "different" if at least two offers in the group disagree on
+ * it — a group of one, or a group where every offer happens to match on
+ * a field, reports false for that field. If every field matches across
+ * the whole group, anyDifference is false: the UI should say so plainly
+ * rather than implying a benefit that isn't there.
+ */
+export function getFareDifferences(group: DuffelOffer[]): FareDifferences {
+  const attrs = group.map(getFareAttributes);
+
+  const differs = (values: Array<string | number | boolean | null>): boolean =>
+    new Set(values).size > 1;
+
+  const bags             = differs(attrs.map(a => a.bags));
+  const carryOn          = differs(attrs.map(a => a.carryOn));
+  const flexibility      = differs(attrs.map(a => a.flexShort));
+  const seatSelection    = differs(attrs.map(a => a.seatSelection));
+  const priorityBoarding = differs(attrs.map(a => a.priorityBoarding));
+  const priorityCheckIn  = differs(attrs.map(a => a.priorityCheckIn));
+  const wifi             = differs(attrs.map(a => a.wifiAvailable));
+  const power             = differs(attrs.map(a => a.powerAvailable));
+
+  return {
+    bags, carryOn, flexibility, seatSelection, priorityBoarding, priorityCheckIn, wifi, power,
+    anyDifference: bags || carryOn || flexibility || seatSelection || priorityBoarding || priorityCheckIn || wifi || power,
+  };
 }

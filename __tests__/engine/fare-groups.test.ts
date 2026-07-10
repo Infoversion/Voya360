@@ -1,4 +1,7 @@
-import { getFlightIdentityKey, groupOffersByFlight, getFareBrandLabel, getAdvanceSeatSelection } from '@/engine/fare-groups';
+import {
+  getFlightIdentityKey, groupOffersByFlight, getFareBrandLabel, getAdvanceSeatSelection,
+  getFareAttributes, getFareDifferences,
+} from '@/engine/fare-groups';
 import type { DuffelOffer } from '@/types/duffel';
 
 function makeOffer(opts: {
@@ -10,6 +13,14 @@ function makeOffer(opts: {
   cabinClass?:              string;
   fareBrandName?:           string | null;
   advanceSeatSelection?:    boolean | null;
+  checkedBags?:             number;
+  carryOnBags?:             number;
+  refundable?:              boolean;
+  changeable?:              boolean;
+  priorityBoarding?:        boolean | null;
+  priorityCheckIn?:         boolean | null;
+  wifiAvailable?:           boolean | null;
+  powerAvailable?:          boolean | null;
 } = {}): DuffelOffer {
   const {
     id                      = 'offer-1',
@@ -20,7 +31,19 @@ function makeOffer(opts: {
     cabinClass              = 'economy',
     fareBrandName           = null,
     advanceSeatSelection    = null,
+    checkedBags             = 0,
+    carryOnBags             = 0,
+    refundable              = false,
+    changeable              = false,
+    priorityBoarding        = null,
+    priorityCheckIn         = null,
+    wifiAvailable           = null,
+    powerAvailable          = null,
   } = opts;
+
+  const baggages: Array<{ type: 'checked' | 'carry_on'; quantity: number }> = [];
+  if (checkedBags > 0) baggages.push({ type: 'checked', quantity: checkedBags });
+  if (carryOnBags > 0) baggages.push({ type: 'carry_on', quantity: carryOnBags });
 
   const segment = {
     id:           'seg-1',
@@ -32,7 +55,17 @@ function makeOffer(opts: {
     operating_carrier: { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier:  { iata_code: 'EK', name: 'Emirates', logo_symbol_url: null, logo_lockup_url: null },
     marketing_carrier_flight_number: flightNumber,
-    passengers: [{ passenger_id: 'pax-1', cabin_class: cabinClass, baggages: [] }],
+    passengers: [{
+      passenger_id: 'pax-1',
+      cabin_class:  cabinClass,
+      baggages,
+      cabin: {
+        amenities: {
+          wifi:  wifiAvailable  === null ? null : { available: wifiAvailable,  cost: null },
+          power: powerAvailable === null ? null : { available: powerAvailable },
+        },
+      },
+    }],
   };
 
   return {
@@ -42,7 +75,10 @@ function makeOffer(opts: {
     base_amount:    String(totalAmount),
     tax_amount:     '0.00',
     expires_at:     '2026-09-02T00:00:00',
-    conditions:     { change_before_departure: null, refund_before_departure: null },
+    conditions: {
+      change_before_departure: changeable ? { allowed: true, penalty_amount: null } : null,
+      refund_before_departure: refundable ? { allowed: true, penalty_amount: null } : null,
+    },
     slices: [{
       id:               'slice-1',
       origin:           segment.origin,
@@ -51,8 +87,8 @@ function makeOffer(opts: {
       fare_brand_name:  fareBrandName,
       conditions: {
         change_before_departure: null,
-        priority_check_in:       null,
-        priority_boarding:       null,
+        priority_check_in:       priorityCheckIn,
+        priority_boarding:       priorityBoarding,
         advance_seat_selection:  advanceSeatSelection,
       },
       segments: [segment],
@@ -157,5 +193,92 @@ describe('getAdvanceSeatSelection', () => {
   it('defaults to false when not specified', () => {
     const offer = makeOffer({ advanceSeatSelection: null });
     expect(getAdvanceSeatSelection(offer)).toBe(false);
+  });
+});
+
+describe('getFareAttributes', () => {
+  it('reads every comparable attribute off an offer', () => {
+    const offer = makeOffer({
+      checkedBags: 1, carryOnBags: 1, refundable: true, changeable: false,
+      advanceSeatSelection: true, priorityBoarding: true, priorityCheckIn: false,
+      wifiAvailable: true, powerAvailable: false,
+    });
+    const attrs = getFareAttributes(offer);
+    expect(attrs.bags).toBe(1);
+    expect(attrs.carryOn).toBe(1);
+    expect(attrs.flexShort).toBe('REF');
+    expect(attrs.seatSelection).toBe(true);
+    expect(attrs.priorityBoarding).toBe(true);
+    expect(attrs.priorityCheckIn).toBe(false);
+    expect(attrs.wifiAvailable).toBe(true);
+    expect(attrs.powerAvailable).toBe(false);
+  });
+
+  it('reports null for amenities the airline did not specify', () => {
+    const offer = makeOffer({ priorityBoarding: null, priorityCheckIn: null, wifiAvailable: null, powerAvailable: null });
+    const attrs = getFareAttributes(offer);
+    expect(attrs.priorityBoarding).toBeNull();
+    expect(attrs.priorityCheckIn).toBeNull();
+    expect(attrs.wifiAvailable).toBeNull();
+    expect(attrs.powerAvailable).toBeNull();
+  });
+});
+
+describe('getFareDifferences', () => {
+  it('flags only the fields that actually differ across the group', () => {
+    // Reproduces the reported case: bags, flexibility, and seat selection are
+    // all identical — only fare_brand_name (not compared here) differs.
+    const a = makeOffer({ id: 'a', checkedBags: 0, refundable: false, changeable: false, advanceSeatSelection: false });
+    const b = makeOffer({ id: 'b', checkedBags: 0, refundable: false, changeable: false, advanceSeatSelection: false });
+
+    const diff = getFareDifferences([a, b]);
+
+    expect(diff.bags).toBe(false);
+    expect(diff.carryOn).toBe(false);
+    expect(diff.flexibility).toBe(false);
+    expect(diff.seatSelection).toBe(false);
+    expect(diff.priorityBoarding).toBe(false);
+    expect(diff.priorityCheckIn).toBe(false);
+    expect(diff.wifi).toBe(false);
+    expect(diff.power).toBe(false);
+    expect(diff.anyDifference).toBe(false);
+  });
+
+  it('flags bags as differing when checked-bag counts differ', () => {
+    const a = makeOffer({ id: 'a', checkedBags: 0 });
+    const b = makeOffer({ id: 'b', checkedBags: 1 });
+    const diff = getFareDifferences([a, b]);
+    expect(diff.bags).toBe(true);
+    expect(diff.anyDifference).toBe(true);
+  });
+
+  it('flags flexibility as differing when refund/change status differs', () => {
+    const a = makeOffer({ id: 'a', refundable: false, changeable: false });
+    const b = makeOffer({ id: 'b', refundable: true,  changeable: true });
+    const diff = getFareDifferences([a, b]);
+    expect(diff.flexibility).toBe(true);
+    expect(diff.bags).toBe(false);
+  });
+
+  it('flags seat selection as differing (the Frontier Basic/Economy case)', () => {
+    const basic   = makeOffer({ id: 'basic', fareBrandName: 'Basic',   advanceSeatSelection: false });
+    const economy = makeOffer({ id: 'econ',  fareBrandName: 'Economy', advanceSeatSelection: true });
+    const diff = getFareDifferences([basic, economy]);
+    expect(diff.seatSelection).toBe(true);
+    expect(diff.anyDifference).toBe(true);
+  });
+
+  it('flags wifi and power as differing when amenity availability differs', () => {
+    const a = makeOffer({ id: 'a', wifiAvailable: false, powerAvailable: false });
+    const b = makeOffer({ id: 'b', wifiAvailable: true,  powerAvailable: true });
+    const diff = getFareDifferences([a, b]);
+    expect(diff.wifi).toBe(true);
+    expect(diff.power).toBe(true);
+  });
+
+  it('treats a group of one as having no differences', () => {
+    const solo = makeOffer({ id: 'solo' });
+    const diff = getFareDifferences([solo]);
+    expect(diff.anyDifference).toBe(false);
   });
 });

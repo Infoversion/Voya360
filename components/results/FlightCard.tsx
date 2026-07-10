@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DuffelOffer, DuffelSlice } from '@/types/duffel';
-import { calculateCost, formatDuration, getFareType, getIncludedCarryOnBags } from '@/engine/total-cost';
-import { getFareBrandLabel, getAdvanceSeatSelection } from '@/engine/fare-groups';
+import { calculateCost, formatDuration, getFareType } from '@/engine/total-cost';
+import { getFareBrandLabel, getAdvanceSeatSelection, getFareAttributes, getFareDifferences } from '@/engine/fare-groups';
 import { TrendArrow } from './TrendArrow';
 import { colors, fontSize, spacing } from '@/constants/design';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
@@ -369,85 +369,102 @@ function FareChipRow({
   bagCount:   number;
   onSelect:   (offerId: string) => void;
 }) {
-  // Only show a carry-on icon if it actually differs across this flight's
-  // fare brands — most groups won't have carry-on data at all, and showing
-  // an always-zero icon on every chip would just add noise. Same rule for
-  // seat selection: only show if at least one brand in the group allows it.
-  const hasCarryOnData      = group.some(o => getIncludedCarryOnBags(o) > 0);
-  const hasSeatSelectionData = group.some(o => getAdvanceSeatSelection(o));
+  // Compare every offer in this group across every attribute we can read,
+  // and only show icons for what actually differs — a fixed icon set would
+  // sometimes show identical values on every chip and explain nothing.
+  const diff = getFareDifferences(group);
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={{ marginBottom: 8 }}
-      contentContainerStyle={{ gap: 6 }}
-    >
-      {group.map(o => {
-        const selected  = o.id === selectedId;
-        const cost      = calculateCost(o, bagCount);
-        const price     = Math.round(cost.total);
-        const ft        = getFareType(o);
-        const carryOn   = getIncludedCarryOnBags(o);
-        const seatSelect = getAdvanceSeatSelection(o);
-        const textColor = selected ? '#fff' : colors.text;
-        const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
-        return (
-          <TouchableOpacity
-            key={o.id}
-            onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
-            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-            style={{
-              minWidth:          88,
-              borderRadius:      10,
-              paddingHorizontal: 10,
-              paddingVertical:   6,
-              borderWidth:       1.5,
-              borderColor:       selected ? colors.accent : colors.border,
-              backgroundColor:   selected ? colors.accent : colors.background,
-            }}
-          >
-            <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
-              {getFareBrandLabel(o)}
-            </Text>
-            {/* What's different: included bags (checked + carry-on), change/refund flexibility, seat selection */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                <Ionicons name="briefcase-outline" size={10} color={dimColor} />
-                <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{cost.bagsIncluded}</Text>
+    <View style={{ marginBottom: 8 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 6 }}
+      >
+        {group.map(o => {
+          const selected  = o.id === selectedId;
+          const cost      = calculateCost(o, bagCount);
+          const price     = Math.round(cost.total);
+          const ft        = getFareType(o);
+          const attrs     = getFareAttributes(o);
+          const textColor = selected ? '#fff' : colors.text;
+          const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
+          const onColor   = selected ? '#fff' : colors.success;
+          return (
+            <TouchableOpacity
+              key={o.id}
+              onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              style={{
+                minWidth:          88,
+                borderRadius:      10,
+                paddingHorizontal: 10,
+                paddingVertical:   6,
+                borderWidth:       1.5,
+                borderColor:       selected ? colors.accent : colors.border,
+                backgroundColor:   selected ? colors.accent : colors.background,
+              }}
+            >
+              <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
+                {getFareBrandLabel(o)}
+              </Text>
+              {/* Only the attributes that actually differ across this group, as icons */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
+                {diff.bags && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Ionicons name="briefcase-outline" size={10} color={dimColor} />
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{attrs.bags}</Text>
+                  </View>
+                )}
+                {diff.carryOn && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Ionicons name="bag-handle-outline" size={10} color={dimColor} />
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{attrs.carryOn}</Text>
+                  </View>
+                )}
+                {diff.flexibility && (
+                  <Ionicons
+                    name={ft.refundable && ft.changeable
+                      ? 'shield-checkmark-outline'
+                      : ft.refundable
+                      ? 'refresh-outline'
+                      : ft.changeable
+                      ? 'swap-horizontal-outline'
+                      : 'close-circle-outline'}
+                    size={11}
+                    color={selected ? '#fff' : ft.color}
+                  />
+                )}
+                {diff.seatSelection && (
+                  <Ionicons name="grid-outline" size={11} color={attrs.seatSelection ? onColor : dimColor} />
+                )}
+                {diff.priorityBoarding && (
+                  <Ionicons name="walk-outline" size={11} color={attrs.priorityBoarding ? onColor : dimColor} />
+                )}
+                {diff.priorityCheckIn && (
+                  <Ionicons name="checkmark-done-outline" size={11} color={attrs.priorityCheckIn ? onColor : dimColor} />
+                )}
+                {diff.wifi && (
+                  <Ionicons name="wifi-outline" size={11} color={attrs.wifiAvailable ? onColor : dimColor} />
+                )}
+                {diff.power && (
+                  <Ionicons name="flash-outline" size={11} color={attrs.powerAvailable ? onColor : dimColor} />
+                )}
               </View>
-              {hasCarryOnData && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                  <Ionicons name="bag-handle-outline" size={10} color={dimColor} />
-                  <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{carryOn}</Text>
-                </View>
-              )}
-              <Ionicons
-                name={ft.refundable && ft.changeable
-                  ? 'shield-checkmark-outline'
-                  : ft.refundable
-                  ? 'refresh-outline'
-                  : ft.changeable
-                  ? 'swap-horizontal-outline'
-                  : 'close-circle-outline'}
-                size={11}
-                color={selected ? '#fff' : ft.color}
-              />
-              {hasSeatSelectionData && (
-                <Ionicons
-                  name="grid-outline"
-                  size={11}
-                  color={seatSelect ? (selected ? '#fff' : colors.success) : dimColor}
-                />
-              )}
-            </View>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
-              ${price}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
+                ${price}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {!diff.anyDifference && (
+        <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 4, fontStyle: 'italic' }}>
+          No difference found in baggage, flexibility, or amenities between these fares — price is the only difference we can see.
+        </Text>
+      )}
+    </View>
   );
 }
 
