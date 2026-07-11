@@ -1,7 +1,7 @@
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, Image, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useSearchStore } from '@/store/search.store';
 import { useAuthStore }   from '@/store/auth.store';
 import { useVoyaStore }   from '@/store/voya.store';
@@ -350,6 +350,14 @@ export default function ResultsScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#F9FAFB' }}>
+      {/*
+        Stack view's card deck has its own left/right swipe gestures (next/
+        previous). iOS's native edge-swipe-back gesture competes with those —
+        a right-swipe on a card was triggering "go back" instead of "previous
+        card". Disable the screen's swipe-back only while stack view is
+        active; list view keeps normal swipe-back.
+      */}
+      <Stack.Screen options={{ gestureEnabled: viewMode !== 'stack' }} />
       {/* ── Header ── */}
       <View style={{
         backgroundColor: colors.background,
