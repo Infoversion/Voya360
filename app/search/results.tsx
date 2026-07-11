@@ -230,6 +230,15 @@ export default function ResultsScreen() {
     [fareGroups],
   );
 
+  // Distinct-flight count (pre-filter) for the FilterBar's "X of Y flights"
+  // label in bundled mode — allOffers.length counts every individual
+  // fare-brand offer, which no longer matches what's actually shown once
+  // same-flight offers are grouped into one card.
+  const totalFlightGroups = useMemo(
+    () => groupOffersByFlight(allOffers).length,
+    [allOffers],
+  );
+
   const displayOffers: DuffelOffer[] = isRoundTrip && mode === 'stepwise'
     ? (step === 1 ? stepwiseOutbounds : stepwiseReturns)
     : bundledDisplayOffers;
@@ -472,8 +481,8 @@ export default function ResultsScreen() {
       {/* ── Filter bar ── */}
       <FilterBar
         availableAirlines={availableAirlines}
-        filteredCount={filteredOffers.length}
-        totalCount={allOffers.length}
+        filteredCount={mode === 'bundled' ? bundledDisplayOffers.length : filteredOffers.length}
+        totalCount={mode === 'bundled' ? totalFlightGroups : allOffers.length}
       />
 
       {/* ── Seasonal demand banner ── */}

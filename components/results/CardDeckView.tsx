@@ -69,6 +69,16 @@ export function CardDeckView({
     extrapolate: 'clamp',
   });
 
+  // Upward drag (negative dy) is clamped to 0 visually via this derived
+  // value rather than by calling translateY.setValue(Math.max(0, dy))
+  // directly — see onPanResponderMove below for why raw values must stay
+  // native-driven only.
+  const clampedTranslateY = translateY.interpolate({
+    inputRange:  [-1000, 0, 1000],
+    outputRange: [0, 0, 1000],
+    extrapolate: 'clamp',
+  });
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -85,10 +95,20 @@ export function CardDeckView({
         return isHorizontal || isDownSwipe;
       },
 
-      onPanResponderMove: (_, g) => {
-        translateX.setValue(g.dx);
-        translateY.setValue(Math.max(0, g.dy));
-      },
+      // Native-driven for the whole gesture — mixing this JS-thread
+      // .setValue()-per-move-event approach with the native-driven
+      // Animated.timing/spring calls in onPanResponderRelease below is a
+      // known source of JS/native value desync in RN's Animated API: after
+      // enough of these mixed updates, the native side's transform can get
+      // out of sync with where RN's touch system thinks the view actually
+      // is, so touches stop landing on it — this is what was causing the
+      // deck to stop responding to swipes after repeated use. Animated.event
+      // keeps drag-tracking entirely on the native side, consistent with
+      // the release animations.
+      onPanResponderMove: Animated.event(
+        [null, { dx: translateX, dy: translateY }],
+        { useNativeDriver: true },
+      ),
 
       onPanResponderRelease: (_, g) => {
         const isLeftSwipe  = g.dx < -SWIPE_X_THRESHOLD || g.vx < -SWIPE_VEL;
@@ -247,7 +267,7 @@ export function CardDeckView({
             {/* Top card — in normal flow, renders last = highest z-order */}
             <Animated.View
               {...panResponder.panHandlers}
-              style={{ transform: [{ translateX }, { translateY }, { rotate }] }}
+              style={{ transform: [{ translateX }, { translateY: clampedTranslateY }, { rotate }] }}
             >
               <FlightCard
                 key={topOffer.id}
