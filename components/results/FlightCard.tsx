@@ -62,20 +62,20 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, marginRight: 8 }}>
           <AirlineLogo iataCode={carrier?.iata_code ?? ''} logoUrl={carrier?.logo_symbol_url} size={26} radius={5} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: colors.text }}>
+            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
               {carrier?.name ?? '—'}
             </Text>
-            <Text numberOfLines={1} style={{ fontSize: 10, color: colors.textMuted }}>
+            <Text numberOfLines={1} style={{ fontSize: 11, color: colors.textMuted }}>
               {flightNums}
               {firstSeg?.aircraft?.name ? ` · ${firstSeg.aircraft.name}` : ''}
             </Text>
           </View>
         </View>
         <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.text }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.text }}>
             {formatDuration(slice.duration)}
           </Text>
-          <Text style={{ fontSize: 10, color: stops === 0 ? colors.success : colors.textMuted }}>
+          <Text style={{ fontSize: 11, color: stops === 0 ? colors.success : colors.textMuted }}>
             {stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`}
           </Text>
         </View>
@@ -83,9 +83,9 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
 
       {/* Time + route */}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ alignItems: 'flex-start', width: 80 }}>
-          <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{fmt(firstSeg?.departing_at ?? '')}</Text>
-          <Text style={{ fontSize: 11, color: colors.textMuted }}>{slice.origin.iata_code}</Text>
+        <View style={{ alignItems: 'flex-start', width: 84 }}>
+          <Text numberOfLines={1} style={{ fontSize: 19, fontWeight: '800', color: colors.text }}>{fmt(firstSeg?.departing_at ?? '')}</Text>
+          <Text style={{ fontSize: 13, color: colors.textMuted }}>{slice.origin.iata_code}</Text>
         </View>
 
         <View style={{ flex: 1, paddingHorizontal: 6 }}>
@@ -107,7 +107,7 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
               >
                 <Text style={{
-                  fontSize: 10, fontWeight: '700', marginTop: 3,
+                  fontSize: 11, fontWeight: '700', marginTop: 3,
                   color: colors.accent, textDecorationLine: 'underline',
                 }}>
                   via {stopDetails.map(s => s.iataCode).join(', ')} {expanded ? '▲' : '▼'}
@@ -117,9 +117,9 @@ function SliceRow({ slice, label, isReturn = false }: { slice: DuffelSlice; labe
           )}
         </View>
 
-        <View style={{ alignItems: 'flex-end', width: 80 }}>
-          <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{fmt(lastSeg?.arriving_at ?? '')}</Text>
-          <Text style={{ fontSize: 11, color: colors.textMuted }}>{slice.destination.iata_code}</Text>
+        <View style={{ alignItems: 'flex-end', width: 84 }}>
+          <Text numberOfLines={1} style={{ fontSize: 19, fontWeight: '800', color: colors.text }}>{fmt(lastSeg?.arriving_at ?? '')}</Text>
+          <Text style={{ fontSize: 13, color: colors.textMuted }}>{slice.destination.iata_code}</Text>
         </View>
       </View>
 
@@ -192,6 +192,7 @@ function FareTypeSheet({ offer, visible, onClose }: {
   const airlineName = offer.slices[0]?.segments[0]?.marketing_carrier?.name ?? 'This airline';
   const sliceConditions  = offer.slices[0]?.conditions;
   const amenities         = offer.slices[0]?.segments[0]?.passengers[0]?.cabin?.amenities;
+  const attrs             = getFareAttributes(offer);
   const advanceSeatSelect = getAdvanceSeatSelection(offer);
   const priorityBoarding  = sliceConditions?.priority_boarding ?? null;
   const priorityCheckIn   = sliceConditions?.priority_check_in ?? null;
@@ -284,6 +285,24 @@ function FareTypeSheet({ offer, visible, onClose }: {
               <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.5, marginBottom: 8 }}>
                 WHAT'S INCLUDED
               </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Ionicons name="briefcase-outline" size={16} color={attrs.bags > 0 ? colors.success : colors.warning} />
+                <Text style={{ fontSize: 13, color: colors.text }}>
+                  {attrs.bags > 0
+                    ? `${attrs.bags} free checked bag${attrs.bags > 1 ? 's' : ''}`
+                    : 'No free checked bags — extra bags priced separately'}
+                </Text>
+              </View>
+
+              {attrs.carryOn > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="bag-handle-outline" size={16} color={colors.success} />
+                  <Text style={{ fontSize: 13, color: colors.text }}>
+                    {attrs.carryOn} free carry-on bag{attrs.carryOn > 1 ? 's' : ''}
+                  </Text>
+                </View>
+              )}
 
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <Ionicons name="grid-outline" size={16} color={advanceSeatSelect ? colors.success : colors.textMuted} />
@@ -546,7 +565,7 @@ export function FlightCard({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         {/* Left: counter */}
         {index !== undefined && total !== undefined && (
-          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, marginRight: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, marginRight: 8 }}>
             {index + 1}/{total}
           </Text>
         )}
@@ -556,39 +575,43 @@ export function FlightCard({
           {isCheapest && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
               <Ionicons name="pricetag-outline" size={14} color={colors.success} />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: colors.success }}>Cheapest</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.success }}>Cheapest</Text>
             </View>
           )}
           {isFastest && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
               <Ionicons name="flash-outline" size={14} color="#2563EB" />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: '#2563EB' }}>Fastest</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>Fastest</Text>
             </View>
           )}
           {isVoyaPick && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
               <Ionicons name="sparkles-outline" size={14} color="#9333EA" />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: '#9333EA' }}>Voya pick</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#9333EA' }}>Voya pick</Text>
             </View>
           )}
           {isPreferredAirline && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
               <Ionicons name="star-outline" size={14} color="#7C3AED" />
-              <Text style={{ fontSize: 10, fontWeight: '700', color: '#7C3AED' }}>Your airline</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>Your airline</Text>
             </View>
           )}
         </View>
 
-        {/* Right: baggage + fare type icons */}
+        {/* Right: baggage + fare type icons — both tappable, both open the
+            same fare detail sheet (baggage line lives in its "WHAT'S
+            INCLUDED" section) so neither icon's meaning is left unexplained. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Baggage icon */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); setShowFare(true); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
+          >
             <Ionicons name="briefcase-outline" size={14} color={cost.bagsIncluded > 0 ? colors.success : colors.warning} />
-            <Text style={{ fontSize: 10, fontWeight: '700', color: cost.bagsIncluded > 0 ? colors.success : colors.warning }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: cost.bagsIncluded > 0 ? colors.success : colors.warning }}>
               {cost.bagsIncluded > 0 ? `${cost.bagsIncluded}✓` : '✗'}
             </Text>
-          </View>
-          {/* Fare type icon — tappable to open detail sheet */}
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={(e) => { e.stopPropagation?.(); setShowFare(true); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -638,7 +661,7 @@ export function FlightCard({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>Total you pay</Text>
-          <Text style={{ fontSize: 11, color: colors.textMuted }}>incl. of all taxes and fees</Text>
+          <Text style={{ fontSize: 12, color: colors.textMuted }}>incl. of all taxes and fees</Text>
         </View>
         <Text style={{ fontSize: 36, fontWeight: '800', color: colors.accent }}>
           ${Math.round(cost.total)}

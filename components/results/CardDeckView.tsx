@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { View, Text, TouchableOpacity, Animated, PanResponder } from 'react-native';
+import { View, Text, TouchableOpacity, Animated, PanResponder, Vibration } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FlightCard } from './FlightCard';
 import { getFlightIdentityKey } from '@/engine/fare-groups';
@@ -134,6 +134,7 @@ export function CardDeckView({
             });
           } else {
             // Bounce back — already at last card
+            Vibration.vibrate(40);
             isAnimatingRef.current = true;
             Animated.spring(translateX, { toValue: 0, useNativeDriver: false, tension: 120, friction: 8 })
               .start(() => { isAnimatingRef.current = false; });
@@ -156,6 +157,7 @@ export function CardDeckView({
             });
           } else {
             // Already at the first card — rubber-band bounce to signal "no previous"
+            Vibration.vibrate(40);
             isAnimatingRef.current = true;
             Animated.sequence([
               Animated.timing(translateX, { toValue: 70, duration: 120, useNativeDriver: false }),
@@ -201,9 +203,20 @@ export function CardDeckView({
           {' of '}
           <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{offers.length}</Text>
         </Text>
-        <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 2 }}>
-          Swipe left for next · Swipe right for previous · Swipe down for list
-        </Text>
+        <View style={{ marginTop: 6, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Ionicons name="arrow-back-outline" size={15} color={colors.textMuted} />
+            <Text style={{ fontSize: 13, color: colors.textMuted }}>Swipe left for next</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Ionicons name="arrow-forward-outline" size={15} color={colors.textMuted} />
+            <Text style={{ fontSize: 13, color: colors.textMuted }}>Swipe right for previous</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Ionicons name="arrow-down-outline" size={15} color={colors.textMuted} />
+            <Text style={{ fontSize: 13, color: colors.textMuted }}>Swipe down for list</Text>
+          </View>
+        </View>
       </View>
 
       {/* ── Card stack — vertically centered in the remaining space ── */}
