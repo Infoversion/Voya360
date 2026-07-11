@@ -51,6 +51,18 @@ export function CardDeckView({
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
 
+  // translateX/translateY are shared across every card transition (there's
+  // one Animated.View reused for whichever offer is currently "top", not one
+  // per card). Nothing previously stopped a new swipe from starting while a
+  // prior transition's animation was still resolving — two overlapping
+  // animations fighting over the same shared values produced both the
+  // "frozen after several swipes" bug and the ghosted double-exposure look
+  // (a stale in-flight card composited with the newly-rendered one). This
+  // ref blocks a new gesture from being claimed until the current one's
+  // animation (and the index/value reset in its completion callback) has
+  // fully finished.
+  const isAnimatingRef = useRef(false);
+
   const rotate = translateX.interpolate({
     inputRange:  [-200, 0, 200],
     outputRange: ['-5deg', '0deg', '5deg'],
@@ -61,11 +73,13 @@ export function CardDeckView({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       // Claim horizontal-dominant gestures in either direction (left = next,
-      // right = previous) or a downward swipe (switch to list). The screen's
-      // native swipe-back gesture is disabled at the navigator level while
-      // stack view is active (see results.tsx), so right-swipes don't need
-      // an edge guard here — claiming them unconditionally, same as left.
+      // right = previous) or a downward swipe (switch to list) — but never
+      // while a previous swipe's transition animation is still running. The
+      // screen's native swipe-back gesture is disabled at the navigator
+      // level while stack view is active (see results.tsx), so right-swipes
+      // don't need an edge guard here — claimed unconditionally, same as left.
       onMoveShouldSetPanResponder: (_, g) => {
+        if (isAnimatingRef.current) return false;
         const isHorizontal = Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy);
         const isDownSwipe  = g.dy > 8 && g.dy > Math.abs(g.dx);
         return isHorizontal || isDownSwipe;
@@ -82,14 +96,16 @@ export function CardDeckView({
         const isDownSwipe  = g.dy > SWIPE_Y_THRESHOLD && g.dy > Math.abs(g.dx);
 
         if (isDownSwipe) {
+          isAnimatingRef.current = true;
           Animated.timing(translateY, { toValue: 600, duration: 230, useNativeDriver: true })
-            .start(() => onSwitchRef.current());
+            .start(() => { isAnimatingRef.current = false; onSwitchRef.current(); });
           return;
         }
 
         if (isLeftSwipe) {
           const newIndex = indexRef.current + 1;
           if (newIndex < totalRef.current) {
+            isAnimatingRef.current = true;
             Animated.parallel([
               Animated.timing(translateX, { toValue: -450, duration: 200, useNativeDriver: true }),
               Animated.timing(translateY, { toValue: 0,    duration: 200, useNativeDriver: true }),
@@ -97,10 +113,13 @@ export function CardDeckView({
               onIndexChangeRef.current(newIndex);
               translateX.setValue(0);
               translateY.setValue(0);
+              isAnimatingRef.current = false;
             });
           } else {
             // Bounce back — already at last card
-            Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 8 }).start();
+            isAnimatingRef.current = true;
+            Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 8 })
+              .start(() => { isAnimatingRef.current = false; });
           }
           return;
         }
@@ -108,6 +127,7 @@ export function CardDeckView({
         if (isRightSwipe) {
           const newIndex = indexRef.current - 1;
           if (newIndex >= 0) {
+            isAnimatingRef.current = true;
             Animated.parallel([
               Animated.timing(translateX, { toValue: 450, duration: 200, useNativeDriver: true }),
               Animated.timing(translateY, { toValue: 0,   duration: 200, useNativeDriver: true }),
@@ -115,27 +135,31 @@ export function CardDeckView({
               onIndexChangeRef.current(newIndex);
               translateX.setValue(0);
               translateY.setValue(0);
+              isAnimatingRef.current = false;
             });
           } else {
             // Already at the first card — rubber-band bounce to signal "no previous"
+            isAnimatingRef.current = true;
             Animated.sequence([
               Animated.timing(translateX, { toValue: 70, duration: 120, useNativeDriver: true }),
               Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 7 }),
-            ]).start();
+            ]).start(() => { isAnimatingRef.current = false; });
           }
           return;
         }
 
         // Snap back
+        isAnimatingRef.current = true;
         Animated.parallel([
           Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }),
           Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }),
-        ]).start();
+        ]).start(() => { isAnimatingRef.current = false; });
       },
 
       onPanResponderTerminate: () => {
         Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
         Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        isAnimatingRef.current = false;
       },
     })
   ).current;
@@ -153,18 +177,15 @@ export function CardDeckView({
 
   return (
     <View style={{ flex: 1 }}>
-      {/* ── Counter + hint ── */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        paddingHorizontal: spacing.pagePadding, paddingTop: 4, paddingBottom: 8, gap: 12,
-      }}>
-        <Text style={{ fontSize: 12, color: colors.textMuted }}>
+      {/* ── Counter + help text ── */}
+      <View style={{ paddingHorizontal: spacing.pagePadding, paddingTop: 4, paddingBottom: 8 }}>
+        <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>
           <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{index + 1}</Text>
           {' of '}
           <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{offers.length}</Text>
         </Text>
-        <Text style={{ fontSize: 11, color: colors.textMuted }}>
-          {'← next  ·  previous →  ·  ↓ list'}
+        <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 2 }}>
+          Swipe left for next · Swipe right for previous · Swipe down for list
         </Text>
       </View>
 
@@ -258,8 +279,8 @@ export function CardDeckView({
             onPress={onSwitchToList}
             style={{ alignItems: 'center', paddingVertical: 14, marginTop: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
           >
-            <Ionicons name="list-outline" size={15} color={colors.textMuted} />
-            <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>Show all as list</Text>
+            <Ionicons name="list-outline" size={18} color={colors.textMuted} />
+            <Text style={{ fontSize: 15, color: colors.textMuted, fontWeight: '600' }}>Show all as list</Text>
           </TouchableOpacity>
         </View>
       </View>
