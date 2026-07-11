@@ -10,7 +10,6 @@ import type { PriceTrend } from '@/engine/price-trends';
 const SWIPE_X_THRESHOLD  = 80;
 const SWIPE_Y_THRESHOLD  = 100;
 const SWIPE_VEL          = 0.5;
-const EDGE_GUARD         = 30;  // px from the left screen edge where we don't claim right-swipes, so iOS's native edge-swipe-back gesture still works
 const BEHIND_COUNT       = 3;
 const PEEK_HEIGHT        = 18;  // px of each background card visible above the top card
 
@@ -62,14 +61,14 @@ export function CardDeckView({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       // Claim horizontal-dominant gestures in either direction (left = next,
-      // right = previous) or a downward swipe (switch to list). Right-swipes
-      // starting within EDGE_GUARD of the left screen edge are left unclaimed
-      // so iOS's native edge-swipe-back gesture still works.
+      // right = previous) or a downward swipe (switch to list). The screen's
+      // native swipe-back gesture is disabled at the navigator level while
+      // stack view is active (see results.tsx), so right-swipes don't need
+      // an edge guard here — claiming them unconditionally, same as left.
       onMoveShouldSetPanResponder: (_, g) => {
-        const isLeftSwipe  = g.dx < -8 && Math.abs(g.dx) > Math.abs(g.dy);
-        const isRightSwipe = g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy) && g.x0 > EDGE_GUARD;
+        const isHorizontal = Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy);
         const isDownSwipe  = g.dy > 8 && g.dy > Math.abs(g.dx);
-        return isLeftSwipe || isRightSwipe || isDownSwipe;
+        return isHorizontal || isDownSwipe;
       },
 
       onPanResponderMove: (_, g) => {

@@ -95,7 +95,7 @@ function MonthGrid({ year, month, today, departure, returnDate, destination, onD
       {weeks.map((week, wi) => (
         <View key={wi} style={{ flexDirection: 'row', marginBottom: 2 }}>
           {week.map((day, di) => {
-            if (day === null) return <View key={di} style={{ flex: 1, height: 46 }} />;
+            if (day === null) return <View key={di} style={{ flex: 1, height: 50 }} />;
 
             const dateStr  = `${yearMonth}-${pad2(day)}`;
             const dayDate  = new Date(year, month, day);
@@ -131,7 +131,7 @@ function MonthGrid({ year, month, today, departure, returnDate, destination, onD
                 disabled={isPast}
                 activeOpacity={0.65}
                 style={{
-                  flex: 1, height: 46,
+                  flex: 1, height: 50,
                   alignItems: 'center', justifyContent: 'center',
                   backgroundColor: cellBg,
                   borderRadius: 6,
@@ -150,17 +150,17 @@ function MonthGrid({ year, month, today, departure, returnDate, destination, onD
                 )}
 
                 <View style={{
-                  width: 36, height: 36, borderRadius: 18,
+                  width: 40, height: 40, borderRadius: 20,
                   alignItems: 'center', justifyContent: 'center',
                   backgroundColor: circleBg,
                   borderWidth: isToday && !isDep && !isRet ? 2 : 0,
                   borderColor: TODAY_DOT,
                 }}>
                   <Text style={{
-                    fontSize: 15,
+                    fontSize: 19,
                     fontWeight: isDep || isRet || isToday ? '800' : '500',
                     color: numColor,
-                    lineHeight: 19,
+                    lineHeight: 23,
                   }}>
                     {day}
                   </Text>

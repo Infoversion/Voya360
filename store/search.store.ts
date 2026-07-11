@@ -17,8 +17,10 @@ export interface PassengerCounts {
   infants:  number; // under 2, lap-seated
 }
 
-export type SortMode      = 'total' | 'duration' | 'departure';
+export type SortMode      = 'recommended' | 'total' | 'duration' | 'departure';
 export type SortDirection = 'asc' | 'desc';
+export type StopFilter    = 'all' | 'nonstop' | '1stop' | '2plus';
+export type TimeFilter    = 'any' | 'morning' | 'afternoon' | 'evening';
 
 interface SearchState {
   origin:          AirportOption | null;
@@ -38,6 +40,10 @@ interface SearchState {
   sortDirection:  SortDirection;
   bagCount:       number;
 
+  stopFilter:     StopFilter;
+  timeFilter:     TimeFilter;
+  airlineFilter:  string[]; // IATA codes; empty = show all
+
   setOrigin:            (place: AirportOption | null) => void;
   setDestination:       (place: AirportOption | null) => void;
   swapAirports:         () => void;
@@ -48,6 +54,10 @@ interface SearchState {
   setIsRoundTrip:       (rt: boolean) => void;
   setSortMode:          (mode: SortMode) => void;
   setBagCount:          (n: number) => void;
+  setStopFilter:        (f: StopFilter) => void;
+  setTimeFilter:        (f: TimeFilter) => void;
+  toggleAirlineFilter:  (iata: string) => void;
+  clearFilters:         () => void;
   search:               () => Promise<void>;
   clearResults:         () => void;
 }
@@ -59,16 +69,29 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   returnDate:      null,
   passengerCounts: { adults: 1, children: 0, infants: 0 },
   cabinClass:      'economy',
-  isRoundTrip:     false,
+  isRoundTrip:     true,
 
   offers:         null,
   sortedOffers:   null,
   offerRequestId: null,
   isSearching:    false,
   searchError:    null,
-  sortMode:       'total',
+  sortMode:       'recommended',
   sortDirection:  'asc',
   bagCount:       2,
+
+  stopFilter:    'all',
+  timeFilter:    'any',
+  airlineFilter: [],
+
+  setStopFilter:       (f) => set({ stopFilter: f }),
+  setTimeFilter:       (f) => set({ timeFilter: f }),
+  toggleAirlineFilter: (iata) => set(s => ({
+    airlineFilter: s.airlineFilter.includes(iata)
+      ? s.airlineFilter.filter(c => c !== iata)
+      : [...s.airlineFilter, iata],
+  })),
+  clearFilters: () => set({ stopFilter: 'all', timeFilter: 'any', airlineFilter: [] }),
 
   setOrigin:      (place) => set({ origin: place }),
   setDestination: (place) => set({ destination: place }),
@@ -120,7 +143,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     if (!origin || !destination || !departureDate) return;
     if (isRoundTrip && !returnDate) return;
 
-    set({ isSearching: true, searchError: null, offers: null, sortedOffers: null, sortMode: 'total', sortDirection: 'asc' });
+    set({ isSearching: true, searchError: null, offers: null, sortedOffers: null, sortMode: 'recommended', sortDirection: 'asc', stopFilter: 'all', timeFilter: 'any', airlineFilter: [] });
 
     // Build the typed passenger array for Duffel
     const passengerArray = [
@@ -164,7 +187,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
 function applySort(offers: DuffelOffer[], mode: SortMode, direction: SortDirection, bagCount: number): DuffelOffer[] {
   let sorted: DuffelOffer[];
 
-  if (mode === 'total') {
+  if (mode === 'recommended' || mode === 'total') {
     sorted = sortByTotalCost(offers, bagCount);
   } else if (mode === 'duration') {
     sorted = [...offers].sort((a, b) => {
