@@ -12,6 +12,77 @@ const SWIPE_Y_THRESHOLD  = 100;
 const SWIPE_VEL          = 0.5;
 const BEHIND_COUNT       = 3;
 const PEEK_HEIGHT        = 18;  // px of each background card visible above the top card
+const SLIDER_THUMB       = 22;
+
+// ── Seek slider — drag to jump to any card directly instead of swiping one
+// at a time. Custom-built with PanResponder rather than a Slider library:
+// @react-native-community/slider isn't installed, and adding it mid-session
+// means another native-module pod-install + rebuild for a control this simple.
+function CardSeekSlider({ total, index, onSeek }: {
+  total:  number;
+  index:  number;
+  onSeek: (i: number) => void;
+}) {
+  const trackRef              = useRef<View>(null);
+  const trackLayoutRef        = useRef({ pageX: 0, width: 0 });
+  const lastSeekIndexRef      = useRef(index);
+  lastSeekIndexRef.current    = index;
+
+  const measureTrack = () => {
+    trackRef.current?.measure((_x, _y, width, _height, pageX) => {
+      trackLayoutRef.current = { pageX, width };
+    });
+  };
+
+  const seekToPageX = (pageX: number) => {
+    const { pageX: trackX, width } = trackLayoutRef.current;
+    if (width <= 0 || total <= 1) return;
+    const relX     = Math.max(0, Math.min(width, pageX - trackX));
+    const ratio    = relX / width;
+    const newIndex = Math.round(ratio * (total - 1));
+    if (newIndex !== lastSeekIndexRef.current) {
+      lastSeekIndexRef.current = newIndex;
+      onSeek(newIndex);
+    }
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: (_, g) => seekToPageX(g.x0),
+      onPanResponderMove:  (_, g) => seekToPageX(g.moveX),
+    })
+  ).current;
+
+  const ratio     = total > 1 ? index / (total - 1) : 0;
+  const trackW    = trackLayoutRef.current.width;
+  const thumbLeft = Math.max(0, ratio * trackW - SLIDER_THUMB / 2);
+
+  return (
+    <View style={{ paddingHorizontal: spacing.pagePadding, marginBottom: 6 }}>
+      <View
+        ref={trackRef}
+        onLayout={measureTrack}
+        {...panResponder.panHandlers}
+        style={{ height: SLIDER_THUMB + 10, justifyContent: 'center' }}
+      >
+        <View style={{ height: 4, borderRadius: 2, backgroundColor: colors.border }} />
+        <View style={{
+          position: 'absolute', left: 0, top: (SLIDER_THUMB + 10) / 2 - 2,
+          height: 4, borderRadius: 2, backgroundColor: colors.accent,
+          width: Math.max(SLIDER_THUMB / 2, ratio * trackW),
+        }} />
+        <View style={{
+          position: 'absolute', left: thumbLeft, top: 5,
+          width: SLIDER_THUMB, height: SLIDER_THUMB, borderRadius: SLIDER_THUMB / 2,
+          backgroundColor: colors.accent, borderWidth: 2, borderColor: '#fff',
+          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 3,
+          shadowOffset: { width: 0, height: 1 }, elevation: 3,
+        }} />
+      </View>
+    </View>
+  );
+}
 
 interface Props {
   offers:            DuffelOffer[];
@@ -196,14 +267,10 @@ export function CardDeckView({
 
   return (
     <View style={{ flex: 1 }}>
-      {/* ── Counter + help text ── */}
+      {/* ── Help text — no pagination counter here, FlightCard already shows
+          its own "{index+1}/{total}" inside the card itself. ── */}
       <View style={{ paddingHorizontal: spacing.pagePadding, paddingTop: 4, paddingBottom: 8 }}>
-        <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center' }}>
-          <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{index + 1}</Text>
-          {' of '}
-          <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{offers.length}</Text>
-        </Text>
-        <View style={{ marginTop: 6, gap: 4 }}>
+        <View style={{ gap: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             <Ionicons name="arrow-back-outline" size={15} color={colors.textMuted} />
             <Text style={{ fontSize: 13, color: colors.textMuted }}>Swipe left for next</Text>
@@ -221,6 +288,17 @@ export function CardDeckView({
 
       {/* ── Card stack — vertically centered in the remaining space ── */}
       <View style={{ flex: 1, justifyContent: 'center' }}>
+        {offers.length > 1 && (
+          <CardSeekSlider
+            total={offers.length}
+            index={index}
+            onSeek={(i) => {
+              translateX.setValue(0);
+              translateY.setValue(0);
+              onIndexChangeRef.current(i);
+            }}
+          />
+        )}
         {/*
           stackTopSpace px of padding at the top creates a "tray" for background
           cards to peek into from above the top card.

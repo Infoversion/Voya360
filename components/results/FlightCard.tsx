@@ -388,9 +388,11 @@ function FareChipRow({
   bagCount:   number;
   onSelect:   (offerId: string) => void;
 }) {
-  // Compare every offer in this group across every attribute we can read,
-  // and only show icons for what actually differs — a fixed icon set would
-  // sometimes show identical values on every chip and explain nothing.
+  // Whether anything actually differs across this group at all (bags, carry-on,
+  // flexibility, seat selection, priority boarding/check-in, wifi, power) — used
+  // only for the "no difference found" note. Per-attribute icons were removed
+  // from the chips themselves; long-pressing a chip already shows the full
+  // breakdown via FareTypeSheet, so repeating it as icons here was redundant.
   const diff = getFareDifferences(group);
 
   // Long-pressing any chip previews its full fare details without changing
@@ -400,89 +402,56 @@ function FareChipRow({
 
   return (
     <View style={{ marginBottom: 8 }}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6 }}
-      >
-        {group.map(o => {
-          const selected  = o.id === selectedId;
-          const cost      = calculateCost(o, bagCount);
-          const price     = Math.round(cost.total);
-          const ft        = getFareType(o);
-          const attrs     = getFareAttributes(o);
-          const textColor = selected ? '#fff' : colors.text;
-          const dimColor  = selected ? 'rgba(255,255,255,0.85)' : colors.textMuted;
-          const onColor   = selected ? '#fff' : colors.success;
-          return (
-            <TouchableOpacity
-              key={o.id}
-              onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
-              onLongPress={(e) => { e?.stopPropagation?.(); setDetailOffer(o); }}
-              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-              style={{
-                minWidth:          88,
-                borderRadius:      10,
-                paddingHorizontal: 10,
-                paddingVertical:   6,
-                borderWidth:       1.5,
-                borderColor:       selected ? colors.accent : colors.border,
-                backgroundColor:   selected ? colors.accent : colors.background,
-              }}
-            >
-              <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
-                {getFareBrandLabel(o)}
-              </Text>
-              {/* Only the attributes that actually differ across this group, as icons */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 3 }}>
-                {diff.bags && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                    <Ionicons name="briefcase-outline" size={10} color={dimColor} />
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{attrs.bags}</Text>
-                  </View>
-                )}
-                {diff.carryOn && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                    <Ionicons name="bag-handle-outline" size={10} color={dimColor} />
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: dimColor }}>{attrs.carryOn}</Text>
-                  </View>
-                )}
-                {diff.flexibility && (
-                  <Ionicons
-                    name={ft.refundable && ft.changeable
-                      ? 'shield-checkmark-outline'
-                      : ft.refundable
-                      ? 'refresh-outline'
-                      : ft.changeable
-                      ? 'swap-horizontal-outline'
-                      : 'close-circle-outline'}
-                    size={11}
-                    color={selected ? '#fff' : ft.color}
-                  />
-                )}
-                {diff.seatSelection && (
-                  <Ionicons name="grid-outline" size={11} color={attrs.seatSelection ? onColor : dimColor} />
-                )}
-                {diff.priorityBoarding && (
-                  <Ionicons name="walk-outline" size={11} color={attrs.priorityBoarding ? onColor : dimColor} />
-                )}
-                {diff.priorityCheckIn && (
-                  <Ionicons name="checkmark-done-outline" size={11} color={attrs.priorityCheckIn ? onColor : dimColor} />
-                )}
-                {diff.wifi && (
-                  <Ionicons name="wifi-outline" size={11} color={attrs.wifiAvailable ? onColor : dimColor} />
-                )}
-                {diff.power && (
-                  <Ionicons name="flash-outline" size={11} color={attrs.powerAvailable ? onColor : dimColor} />
-                )}
-              </View>
-              <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
-                ${price}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+        Long-press a fare to see full details
+      </Text>
+      {/*
+        onStartShouldSetResponder + onResponderTerminationRequest: false make
+        this View claim the touch responder as soon as a gesture starts inside
+        it, before the card's own swipe PanResponder (an ancestor, in
+        CardDeckView) gets asked via onMoveShouldSetPanResponder — otherwise
+        the outer swipe-card gesture (which claims any horizontal drag
+        unconditionally) wins the negotiation and this ScrollView never gets
+        to scroll, even though horizontal scrolling is enabled below.
+      */}
+      <View onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => false}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={group.length > 3}
+          contentContainerStyle={{ gap: 6 }}
+        >
+          {group.map(o => {
+            const selected  = o.id === selectedId;
+            const cost      = calculateCost(o, bagCount);
+            const price     = Math.round(cost.total);
+            const textColor = selected ? '#fff' : colors.text;
+            return (
+              <TouchableOpacity
+                key={o.id}
+                onPress={(e) => { e.stopPropagation?.(); onSelect(o.id); }}
+                onLongPress={(e) => { e?.stopPropagation?.(); setDetailOffer(o); }}
+                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                style={{
+                  minWidth:          88,
+                  borderRadius:      10,
+                  paddingHorizontal: 10,
+                  paddingVertical:   6,
+                  borderWidth:       1.5,
+                  borderColor:       selected ? colors.accent : colors.border,
+                  backgroundColor:   selected ? colors.accent : colors.background,
+                }}
+              >
+                <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: '700', color: textColor }}>
+                  {getFareBrandLabel(o)}
+                </Text>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: textColor, marginTop: 3 }}>
+                  ${price}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {!diff.anyDifference && (
         <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 4, fontStyle: 'italic' }}>
