@@ -70,9 +70,8 @@ export function CardDeckView({
   });
 
   // Upward drag (negative dy) is clamped to 0 visually via this derived
-  // value rather than by calling translateY.setValue(Math.max(0, dy))
-  // directly — see onPanResponderMove below for why raw values must stay
-  // native-driven only.
+  // value instead of clamping the raw value in onPanResponderMove, so the
+  // raw translateY still reflects the true gesture delta.
   const clampedTranslateY = translateY.interpolate({
     inputRange:  [-1000, 0, 1000],
     outputRange: [0, 0, 1000],
@@ -95,20 +94,18 @@ export function CardDeckView({
         return isHorizontal || isDownSwipe;
       },
 
-      // Native-driven for the whole gesture — mixing this JS-thread
-      // .setValue()-per-move-event approach with the native-driven
-      // Animated.timing/spring calls in onPanResponderRelease below is a
-      // known source of JS/native value desync in RN's Animated API: after
-      // enough of these mixed updates, the native side's transform can get
-      // out of sync with where RN's touch system thinks the view actually
-      // is, so touches stop landing on it — this is what was causing the
-      // deck to stop responding to swipes after repeated use. Animated.event
-      // keeps drag-tracking entirely on the native side, consistent with
-      // the release animations.
-      onPanResponderMove: Animated.event(
-        [null, { dx: translateX, dy: translateY }],
-        { useNativeDriver: true },
-      ),
+      // Animated.event as a raw PanResponder handler crashed on this device
+      // ("Object is not a function" inside PanResponder.js — the returned
+      // value wasn't directly callable in this RN/Fabric setup). Reverted to
+      // a plain callback with direct .setValue() calls. To still avoid
+      // mixing JS-driven and native-driven updates on the same Animated.Value
+      // (a real desync risk), every animation below now consistently uses
+      // useNativeDriver: false instead — one driver throughout, not native
+      // for release animations and JS for drag-tracking.
+      onPanResponderMove: (_, g) => {
+        translateX.setValue(g.dx);
+        translateY.setValue(g.dy); // clamped for display only, via clampedTranslateY below
+      },
 
       onPanResponderRelease: (_, g) => {
         const isLeftSwipe  = g.dx < -SWIPE_X_THRESHOLD || g.vx < -SWIPE_VEL;
@@ -117,7 +114,7 @@ export function CardDeckView({
 
         if (isDownSwipe) {
           isAnimatingRef.current = true;
-          Animated.timing(translateY, { toValue: 600, duration: 230, useNativeDriver: true })
+          Animated.timing(translateY, { toValue: 600, duration: 230, useNativeDriver: false })
             .start(() => { isAnimatingRef.current = false; onSwitchRef.current(); });
           return;
         }
@@ -127,8 +124,8 @@ export function CardDeckView({
           if (newIndex < totalRef.current) {
             isAnimatingRef.current = true;
             Animated.parallel([
-              Animated.timing(translateX, { toValue: -450, duration: 200, useNativeDriver: true }),
-              Animated.timing(translateY, { toValue: 0,    duration: 200, useNativeDriver: true }),
+              Animated.timing(translateX, { toValue: -450, duration: 200, useNativeDriver: false }),
+              Animated.timing(translateY, { toValue: 0,    duration: 200, useNativeDriver: false }),
             ]).start(() => {
               onIndexChangeRef.current(newIndex);
               translateX.setValue(0);
@@ -138,7 +135,7 @@ export function CardDeckView({
           } else {
             // Bounce back — already at last card
             isAnimatingRef.current = true;
-            Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 8 })
+            Animated.spring(translateX, { toValue: 0, useNativeDriver: false, tension: 120, friction: 8 })
               .start(() => { isAnimatingRef.current = false; });
           }
           return;
@@ -149,8 +146,8 @@ export function CardDeckView({
           if (newIndex >= 0) {
             isAnimatingRef.current = true;
             Animated.parallel([
-              Animated.timing(translateX, { toValue: 450, duration: 200, useNativeDriver: true }),
-              Animated.timing(translateY, { toValue: 0,   duration: 200, useNativeDriver: true }),
+              Animated.timing(translateX, { toValue: 450, duration: 200, useNativeDriver: false }),
+              Animated.timing(translateY, { toValue: 0,   duration: 200, useNativeDriver: false }),
             ]).start(() => {
               onIndexChangeRef.current(newIndex);
               translateX.setValue(0);
@@ -161,8 +158,8 @@ export function CardDeckView({
             // Already at the first card — rubber-band bounce to signal "no previous"
             isAnimatingRef.current = true;
             Animated.sequence([
-              Animated.timing(translateX, { toValue: 70, duration: 120, useNativeDriver: true }),
-              Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 7 }),
+              Animated.timing(translateX, { toValue: 70, duration: 120, useNativeDriver: false }),
+              Animated.spring(translateX, { toValue: 0, useNativeDriver: false, tension: 120, friction: 7 }),
             ]).start(() => { isAnimatingRef.current = false; });
           }
           return;
@@ -171,14 +168,14 @@ export function CardDeckView({
         // Snap back
         isAnimatingRef.current = true;
         Animated.parallel([
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }),
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 10 }),
+          Animated.spring(translateX, { toValue: 0, useNativeDriver: false, tension: 80, friction: 10 }),
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: false, tension: 80, friction: 10 }),
         ]).start(() => { isAnimatingRef.current = false; });
       },
 
       onPanResponderTerminate: () => {
-        Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: false }).start();
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: false }).start();
         isAnimatingRef.current = false;
       },
     })
