@@ -7,11 +7,12 @@ import { colors, fontSize, spacing } from '@/constants/design';
 import type { DuffelOffer } from '@/types/duffel';
 import type { PriceTrend } from '@/engine/price-trends';
 
-const SWIPE_X_THRESHOLD = 80;
-const SWIPE_Y_THRESHOLD = 100;
-const SWIPE_VEL         = 0.5;
-const BEHIND_COUNT      = 3;
-const PEEK_HEIGHT       = 14;  // px of each background card visible above the top card
+const SWIPE_X_THRESHOLD  = 80;
+const SWIPE_Y_THRESHOLD  = 100;
+const SWIPE_VEL          = 0.5;
+const EDGE_GUARD         = 30;  // px from the left screen edge where we don't claim right-swipes, so iOS's native edge-swipe-back gesture still works
+const BEHIND_COUNT       = 3;
+const PEEK_HEIGHT        = 18;  // px of each background card visible above the top card
 
 interface Props {
   offers:            DuffelOffer[];
@@ -60,22 +61,26 @@ export function CardDeckView({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      // Only claim horizontal-dominant gestures (swipe left) or downward swipe.
-      // Right swipe is intentionally excluded to avoid iOS navigation back conflict.
+      // Claim horizontal-dominant gestures in either direction (left = next,
+      // right = previous) or a downward swipe (switch to list). Right-swipes
+      // starting within EDGE_GUARD of the left screen edge are left unclaimed
+      // so iOS's native edge-swipe-back gesture still works.
       onMoveShouldSetPanResponder: (_, g) => {
-        const isLeftSwipe = g.dx < -8 && Math.abs(g.dx) > Math.abs(g.dy);
-        const isDownSwipe = g.dy > 8 && g.dy > Math.abs(g.dx);
-        return isLeftSwipe || isDownSwipe;
+        const isLeftSwipe  = g.dx < -8 && Math.abs(g.dx) > Math.abs(g.dy);
+        const isRightSwipe = g.dx > 8 && Math.abs(g.dx) > Math.abs(g.dy) && g.x0 > EDGE_GUARD;
+        const isDownSwipe  = g.dy > 8 && g.dy > Math.abs(g.dx);
+        return isLeftSwipe || isRightSwipe || isDownSwipe;
       },
 
       onPanResponderMove: (_, g) => {
-        if (g.dx < 0) translateX.setValue(g.dx); // only allow leftward drag
+        translateX.setValue(g.dx);
         translateY.setValue(Math.max(0, g.dy));
       },
 
       onPanResponderRelease: (_, g) => {
-        const isLeftSwipe = g.dx < -SWIPE_X_THRESHOLD || g.vx < -SWIPE_VEL;
-        const isDownSwipe = g.dy > SWIPE_Y_THRESHOLD && g.dy > Math.abs(g.dx);
+        const isLeftSwipe  = g.dx < -SWIPE_X_THRESHOLD || g.vx < -SWIPE_VEL;
+        const isRightSwipe = g.dx >  SWIPE_X_THRESHOLD || g.vx >  SWIPE_VEL;
+        const isDownSwipe  = g.dy > SWIPE_Y_THRESHOLD && g.dy > Math.abs(g.dx);
 
         if (isDownSwipe) {
           Animated.timing(translateY, { toValue: 600, duration: 230, useNativeDriver: true })
@@ -97,6 +102,27 @@ export function CardDeckView({
           } else {
             // Bounce back — already at last card
             Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 8 }).start();
+          }
+          return;
+        }
+
+        if (isRightSwipe) {
+          const newIndex = indexRef.current - 1;
+          if (newIndex >= 0) {
+            Animated.parallel([
+              Animated.timing(translateX, { toValue: 450, duration: 200, useNativeDriver: true }),
+              Animated.timing(translateY, { toValue: 0,   duration: 200, useNativeDriver: true }),
+            ]).start(() => {
+              onIndexChangeRef.current(newIndex);
+              translateX.setValue(0);
+              translateY.setValue(0);
+            });
+          } else {
+            // Already at the first card — rubber-band bounce to signal "no previous"
+            Animated.sequence([
+              Animated.timing(translateX, { toValue: 70, duration: 120, useNativeDriver: true }),
+              Animated.spring(translateX, { toValue: 0, useNativeDriver: true, tension: 120, friction: 7 }),
+            ]).start();
           }
           return;
         }
@@ -139,129 +165,99 @@ export function CardDeckView({
           <Text style={{ fontWeight: '700', color: colors.text, fontSize: 14 }}>{offers.length}</Text>
         </Text>
         <Text style={{ fontSize: 11, color: colors.textMuted }}>
-          {'← swipe left for next  ·  ↓ swipe down for list'}
+          {'← next  ·  previous →  ·  ↓ list'}
         </Text>
       </View>
 
-      {/* ── Card stack ── */}
-      {/*
-        stackTopSpace px of padding at the top creates a "tray" for background
-        cards to peek into from above the top card.
-        All background cards are position:absolute with negative top values,
-        sitting in that padding space. The top card (non-absolute, in flow) sits
-        below the padding. Cards render back-to-front so the top card is visually
-        on top of all background cards.
-      */}
-      <View style={{ paddingTop: stackTopSpace }}>
-        <View style={{ position: 'relative' }}>
+      {/* ── Card stack — vertically centered in the remaining space ── */}
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        {/*
+          stackTopSpace px of padding at the top creates a "tray" for background
+          cards to peek into from above the top card.
+          All background cards are position:absolute with negative top values,
+          sitting in that padding space. The top card (non-absolute, in flow) sits
+          below the padding. Cards render back-to-front so the top card is visually
+          on top of all background cards.
+        */}
+        <View style={{ paddingTop: stackTopSpace }}>
+          <View style={{ position: 'relative' }}>
 
-          {/* Background cards — further cards peeking from higher up */}
-          {behindOffers.map((offer, i) => {
-            // i=0 → furthest (depth=3), i=2 → closest to top (depth=1)
-            const depth   = BEHIND_COUNT - i;           // 3, 2, 1
-            const topOff  = -(depth * PEEK_HEIGHT);     // -42, -28, -14
-            const opacity = 1 - depth * 0.22;           // 0.34, 0.56, 0.78
-            const scale   = 1 - depth * 0.025;          // 0.925, 0.95, 0.975
+            {/* Background cards — further cards peeking from higher up, with
+                more visible opacity/scale falloff and their own shadow for a
+                clearer stacked-card look. */}
+            {behindOffers.map((offer, i) => {
+              // i=0 → furthest (depth=3), i=2 → closest to top (depth=1)
+              const depth   = BEHIND_COUNT - i;           // 3, 2, 1
+              const topOff  = -(depth * PEEK_HEIGHT);     // -54, -36, -18
+              const opacity = 1 - depth * 0.16;           // 0.52, 0.68, 0.84
+              const scale   = 1 - depth * 0.03;            // 0.91, 0.94, 0.97
 
-            return (
-              <View
-                key={offer.id}
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: 0, right: 0,
-                  top: topOff,
-                  opacity,
-                  transform: [{ scale }],
-                }}
-              >
-                <FlightCard
-                  offer={offer}
-                  fareGroup={fareGroups?.[getFlightIdentityKey(offer)]}
-                  bagCount={bagCount}
-                  trend={trend}
-                  showSliceIndex={showSliceIndex}
-                  preferredAirlines={preferredAirlines}
-                  avoidedAirports={avoidedAirports}
-                  index={index + depth}
-                  total={offers.length}
-                />
-              </View>
-            );
-          })}
+              return (
+                <View
+                  key={offer.id}
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: 0, right: 0,
+                    top: topOff,
+                    opacity,
+                    transform: [{ scale }],
+                    shadowColor:   '#000',
+                    shadowOpacity: 0.12,
+                    shadowRadius:  6,
+                    shadowOffset:  { width: 0, height: 3 },
+                    elevation:     2,
+                  }}
+                >
+                  <FlightCard
+                    offer={offer}
+                    fareGroup={fareGroups?.[getFlightIdentityKey(offer)]}
+                    bagCount={bagCount}
+                    trend={trend}
+                    showSliceIndex={showSliceIndex}
+                    preferredAirlines={preferredAirlines}
+                    avoidedAirports={avoidedAirports}
+                    index={index + depth}
+                    total={offers.length}
+                  />
+                </View>
+              );
+            })}
 
-          {/* Top card — in normal flow, renders last = highest z-order */}
-          <Animated.View
-            {...panResponder.panHandlers}
-            style={{ transform: [{ translateX }, { translateY }, { rotate }] }}
-          >
-            <FlightCard
-              key={topOffer.id}
-              offer={topOffer}
-              fareGroup={fareGroups?.[getFlightIdentityKey(topOffer)]}
-              bagCount={bagCount}
-              trend={trend}
-              showSliceIndex={showSliceIndex}
-              onPress={onCardPress}
-              isCheapest={topOffer.id === cheapestId && isBundled}
-              isFastest={topOffer.id === fastestId && isBundled}
-              isVoyaPick={isBundled && isRoundTrip && index === 0}
-              isPreferredAirline={topOffer.slices[0]?.segments.some(
-                (s: { marketing_carrier: { iata_code: string } }) =>
-                  preferredAirlines.includes(s.marketing_carrier.iata_code)
-              )}
-              preferredAirlines={preferredAirlines}
-              avoidedAirports={avoidedAirports}
-              index={index}
-              total={offers.length}
-            />
-          </Animated.View>
+            {/* Top card — in normal flow, renders last = highest z-order */}
+            <Animated.View
+              {...panResponder.panHandlers}
+              style={{ transform: [{ translateX }, { translateY }, { rotate }] }}
+            >
+              <FlightCard
+                key={topOffer.id}
+                offer={topOffer}
+                fareGroup={fareGroups?.[getFlightIdentityKey(topOffer)]}
+                bagCount={bagCount}
+                trend={trend}
+                showSliceIndex={showSliceIndex}
+                onPress={onCardPress}
+                isCheapest={topOffer.id === cheapestId && isBundled}
+                isFastest={topOffer.id === fastestId && isBundled}
+                isVoyaPick={isBundled && isRoundTrip && index === 0}
+                isPreferredAirline={topOffer.slices[0]?.segments.some(
+                  (s: { marketing_carrier: { iata_code: string } }) =>
+                    preferredAirlines.includes(s.marketing_carrier.iata_code)
+                )}
+                preferredAirlines={preferredAirlines}
+                avoidedAirports={avoidedAirports}
+                index={index}
+                total={offers.length}
+              />
+            </Animated.View>
+          </View>
         </View>
 
+        {/* ── Switch to list ── */}
         <View style={{ paddingHorizontal: spacing.pagePadding }}>
-          {/* ── Navigation buttons ── */}
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-            <TouchableOpacity
-              onPress={() => index > 0 && onIndexChange(index - 1)}
-              disabled={index === 0}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                paddingVertical: 12, borderRadius: 12,
-                borderWidth: 1.5,
-                borderColor:     index === 0 ? colors.border : colors.accent,
-                backgroundColor: index === 0 ? '#F9FAFB' : `${colors.accent}10`,
-                gap: 4,
-              }}
-            >
-              <Text style={{ fontSize: 16, color: index === 0 ? colors.textMuted : colors.accent }}>←</Text>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: index === 0 ? colors.textMuted : colors.accent }}>
-                Previous
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => index < offers.length - 1 && onIndexChange(index + 1)}
-              disabled={index >= offers.length - 1}
-              style={{
-                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                paddingVertical: 12, borderRadius: 12,
-                borderWidth: 1.5,
-                borderColor:     index >= offers.length - 1 ? colors.border : colors.accent,
-                backgroundColor: index >= offers.length - 1 ? '#F9FAFB' : colors.accent,
-                gap: 4,
-              }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>
-                Next
-              </Text>
-              <Text style={{ fontSize: 16, color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>→</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Switch to list ── */}
           <TouchableOpacity
             onPress={onSwitchToList}
-            style={{ alignItems: 'center', paddingVertical: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+            style={{ alignItems: 'center', paddingVertical: 14, marginTop: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
           >
             <Ionicons name="list-outline" size={15} color={colors.textMuted} />
             <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>Show all as list</Text>
