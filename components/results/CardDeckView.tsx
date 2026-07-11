@@ -152,7 +152,7 @@ export function CardDeckView({
         below the padding. Cards render back-to-front so the top card is visually
         on top of all background cards.
       */}
-      <View style={{ paddingHorizontal: spacing.pagePadding, paddingTop: stackTopSpace }}>
+      <View style={{ paddingTop: stackTopSpace }}>
         <View style={{ position: 'relative' }}>
 
           {/* Background cards — further cards peeking from higher up */}
@@ -218,53 +218,55 @@ export function CardDeckView({
           </Animated.View>
         </View>
 
-        {/* ── Navigation buttons ── */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-          <TouchableOpacity
-            onPress={() => index > 0 && onIndexChange(index - 1)}
-            disabled={index === 0}
-            style={{
-              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              paddingVertical: 12, borderRadius: 12,
-              borderWidth: 1.5,
-              borderColor:     index === 0 ? colors.border : colors.accent,
-              backgroundColor: index === 0 ? '#F9FAFB' : `${colors.accent}10`,
-              gap: 4,
-            }}
-          >
-            <Text style={{ fontSize: 16, color: index === 0 ? colors.textMuted : colors.accent }}>←</Text>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: index === 0 ? colors.textMuted : colors.accent }}>
-              Previous
-            </Text>
-          </TouchableOpacity>
+        <View style={{ paddingHorizontal: spacing.pagePadding }}>
+          {/* ── Navigation buttons ── */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+            <TouchableOpacity
+              onPress={() => index > 0 && onIndexChange(index - 1)}
+              disabled={index === 0}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                paddingVertical: 12, borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor:     index === 0 ? colors.border : colors.accent,
+                backgroundColor: index === 0 ? '#F9FAFB' : `${colors.accent}10`,
+                gap: 4,
+              }}
+            >
+              <Text style={{ fontSize: 16, color: index === 0 ? colors.textMuted : colors.accent }}>←</Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: index === 0 ? colors.textMuted : colors.accent }}>
+                Previous
+              </Text>
+            </TouchableOpacity>
 
+            <TouchableOpacity
+              onPress={() => index < offers.length - 1 && onIndexChange(index + 1)}
+              disabled={index >= offers.length - 1}
+              style={{
+                flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                paddingVertical: 12, borderRadius: 12,
+                borderWidth: 1.5,
+                borderColor:     index >= offers.length - 1 ? colors.border : colors.accent,
+                backgroundColor: index >= offers.length - 1 ? '#F9FAFB' : colors.accent,
+                gap: 4,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>
+                Next
+              </Text>
+              <Text style={{ fontSize: 16, color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>→</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Switch to list ── */}
           <TouchableOpacity
-            onPress={() => index < offers.length - 1 && onIndexChange(index + 1)}
-            disabled={index >= offers.length - 1}
-            style={{
-              flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-              paddingVertical: 12, borderRadius: 12,
-              borderWidth: 1.5,
-              borderColor:     index >= offers.length - 1 ? colors.border : colors.accent,
-              backgroundColor: index >= offers.length - 1 ? '#F9FAFB' : colors.accent,
-              gap: 4,
-            }}
+            onPress={onSwitchToList}
+            style={{ alignItems: 'center', paddingVertical: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
           >
-            <Text style={{ fontSize: 13, fontWeight: '600', color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>
-              Next
-            </Text>
-            <Text style={{ fontSize: 16, color: index >= offers.length - 1 ? colors.textMuted : '#fff' }}>→</Text>
+            <Ionicons name="list-outline" size={15} color={colors.textMuted} />
+            <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>Show all as list</Text>
           </TouchableOpacity>
         </View>
-
-        {/* ── Switch to list ── */}
-        <TouchableOpacity
-          onPress={onSwitchToList}
-          style={{ alignItems: 'center', paddingVertical: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
-        >
-          <Ionicons name="list-outline" size={15} color={colors.textMuted} />
-          <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>Show all as list</Text>
-        </TouchableOpacity>
       </View>
     </View>
   );
