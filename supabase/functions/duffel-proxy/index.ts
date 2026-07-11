@@ -23,6 +23,20 @@ function toE164(phone: string): string {
   return digits.startsWith('+') ? digits : `+${digits}`;
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Duffel's own validation error ("Field 'born_on' is invalid...") doesn't
+// identify which passenger or what the actual bad value was — only that
+// *some* passenger's date failed. Validating here first, with the
+// passenger's name and the literal value in the error, turns a mystery
+// 422 into a diagnosable one if a bad date ever reaches this function
+// despite client-side validation.
+function assertIsoDate(value: string, label: string): void {
+  if (!ISO_DATE_RE.test(value)) {
+    throw new Error(`${label} is not a valid date (got "${value}"). Expected YYYY-MM-DD.`);
+  }
+}
+
 function getIncludedBags(offer: any): number {
   const pax = offer?.slices?.[0]?.segments?.[0]?.passengers?.[0];
   if (!pax) return 0;
@@ -218,6 +232,7 @@ serve(async (req) => {
         const { offerId, passengers: paxList, bagCount, services: extraServices = [] } = payload as {
           offerId:    string;
           passengers: Array<{
+            type:            string;
             savedTravelerId: string | null;
             givenName:       string;
             familyName:      string;
@@ -232,6 +247,17 @@ serve(async (req) => {
           bagCount:  number;
           services?: Array<{ id: string; quantity: number }>;
         };
+
+        // Validate every passenger's dates before doing anything else. Duffel's
+        // own error for a bad born_on ("Field 'born_on' is invalid...") doesn't
+        // say which passenger or what the value was — this does, so a bad date
+        // that somehow reaches this function despite client-side validation is
+        // immediately diagnosable instead of a mystery 422.
+        paxList.forEach((p, i) => {
+          const label = `${p.givenName || 'Passenger'} ${p.familyName || ''}`.trim() || `Passenger ${i + 1}`;
+          assertIsoDate(p.dateOfBirth, `${label}: date of birth`);
+          assertIsoDate(p.passportExpiry, `${label}: passport expiry`);
+        });
 
         // Fetch offer to get passenger IDs, flight details, and authoritative pricing.
         const offer = await duffel('GET', `/air/offers/${offerId}`);

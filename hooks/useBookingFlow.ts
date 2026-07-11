@@ -36,6 +36,7 @@ export function useBookingFlow() {
       const result = await initiateBooking({
         offerId:    selectedOffer.id,
         passengers: freshPassengers.map(p => ({
+          type:            p.type,
           savedTravelerId: p.savedTravelerId,
           givenName:       p.givenName,
           familyName:      p.familyName,

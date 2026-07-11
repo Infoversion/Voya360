@@ -80,6 +80,7 @@ export async function createPaymentIntent(params: PaymentIntentParams): Promise<
 }
 
 export interface OrderPassengerPayload {
+  type?:           string; // 'adult' | 'child' | 'infant_without_seat' — used server-side to skip phone validation and inherit the adult's phone for infants
   savedTravelerId: string | null;
   givenName:       string;
   familyName:      string;
@@ -90,6 +91,7 @@ export interface OrderPassengerPayload {
   gender:          string;
   email:           string;
   phone:           string;
+  dietary?:        string | null;
 }
 
 export interface CreateOrderParams {
