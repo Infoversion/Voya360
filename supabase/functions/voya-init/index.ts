@@ -21,6 +21,7 @@ Rules:
 - Only include observations that are actionable right now
 - Never repeat the same type twice
 - Tone: confident, like a knowledgeable friend
+- For seasonal_demand observations: ONLY use events listed under "Upcoming seasonal events" in the user context. If that list is empty, do NOT generate any seasonal_demand observation. Never reference events from your training data — they may be in the past.
 
 Each observation must have:
 - type: one of [corridor_opportunity, day_of_week_saving, baggage_comparison, seasonal_demand, hidden_passenger_saving, fastest_route, booking_validation, post_booking_tip]
@@ -30,7 +31,7 @@ Each observation must have:
 
 Respond ONLY with valid JSON: { "observations": [...] }`;
 
-async function callGrok(userContext: string): Promise<{ observations: unknown[] }> {
+async function callGrok(userPrompt: string, system = SYSTEM_PROMPT): Promise<{ observations: unknown[] }> {
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method:  'POST',
     headers: {
@@ -42,8 +43,8 @@ async function callGrok(userContext: string): Promise<{ observations: unknown[] 
       max_tokens:  600,
       temperature: 0.7,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: `Generate travel observations for this user:\n\n${userContext}` },
+        { role: 'system', content: system },
+        { role: 'user',   content: userPrompt },
       ],
     }),
   });
@@ -59,7 +60,7 @@ async function callGrok(userContext: string): Promise<{ observations: unknown[] 
   return match ? JSON.parse(match[0]) : { observations: [] };
 }
 
-async function callHaiku(userContext: string): Promise<{ observations: unknown[] }> {
+async function callHaiku(userPrompt: string, system = SYSTEM_PROMPT): Promise<{ observations: unknown[] }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method:  'POST',
     headers: {
@@ -70,11 +71,8 @@ async function callHaiku(userContext: string): Promise<{ observations: unknown[]
     body: JSON.stringify({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 600,
-      system:     SYSTEM_PROMPT,
-      messages:   [{
-        role:    'user',
-        content: `Generate travel observations for this user:\n\n${userContext}`,
-      }],
+      system,
+      messages:   [{ role: 'user', content: userPrompt }],
     }),
   });
 
@@ -108,71 +106,174 @@ serve(async (req) => {
       });
     }
 
+    const body = await req.json() as {
+      homeOrigin?:         string | null;
+      homeDestination?:    string | null;
+      preferredAirlines?:  string[];
+      savedTravelerCount?: number;
+      dietaryPreference?:  string | null;
+      upcomingEvents?:     Array<{ name: string; demandLevel: string; daysUntil: number }>;
+      searchContext?:      {
+        origin:          string;
+        destination:     string;
+        departureDate:   string; // YYYY-MM-DD
+        cabinClass:      string;
+        lowestPriceUsd:  number | null;
+        upcomingEvents:  Array<{ name: string; demandLevel: string; daysUntil: number }>;
+      };
+    };
+
     const {
       homeOrigin,
       homeDestination,
       preferredAirlines = [],
       savedTravelerCount = 0,
       dietaryPreference,
-    } = await req.json() as {
-      homeOrigin?:         string | null;
-      homeDestination?:    string | null;
-      preferredAirlines?:  string[];
-      savedTravelerCount?: number;
-      dietaryPreference?:  string | null;
-    };
+      upcomingEvents = [],
+      searchContext,
+    } = body;
 
-    // Fetch latest price snapshots for the user's corridor
-    const priceContext: string[] = [];
-    if (homeOrigin && homeDestination) {
-      const { data: snapshots } = await supabase
+    let userContext: string;
+    let systemOverride: string | null = null;
+
+    if (searchContext) {
+      // ── Search-context mode: generate targeted results-screen observations ──
+      const { origin, destination, departureDate, cabinClass, lowestPriceUsd, upcomingEvents: searchEvents } = searchContext;
+
+      // Query price_history for departure dates ±14 days around the searched date
+      const depDate    = new Date(departureDate + 'T00:00:00Z');
+      const dateFrom   = new Date(depDate.getTime() - 14 * 86400_000).toISOString().slice(0, 10);
+      const dateTo     = new Date(depDate.getTime() + 14 * 86400_000).toISOString().slice(0, 10);
+
+      const { data: dateHistory } = await supabase
         .from('price_history')
-        .select('price_usd, snapshot_at')
-        .eq('origin', homeOrigin)
-        .eq('destination', homeDestination)
-        .order('snapshot_at', { ascending: false })
-        .limit(10);
+        .select('departure_date, price_usd')
+        .eq('origin', origin)
+        .eq('destination', destination)
+        .eq('cabin_class', cabinClass)
+        .gte('departure_date', dateFrom)
+        .lte('departure_date', dateTo)
+        .order('departure_date', { ascending: true });
 
-      if (snapshots && snapshots.length > 0) {
-        const prices = snapshots.map(s => s.price_usd).filter(Boolean) as number[];
-        const avg    = prices.reduce((a, b) => a + b, 0) / prices.length;
-        const latest = prices[0];
-        const pct    = Math.round(((latest - avg) / avg) * 100);
-        priceContext.push(
-          `${homeOrigin}→${homeDestination}: latest $${Math.round(latest)}, ` +
-          `avg $${Math.round(avg)}, trend ${pct > 0 ? '+' : ''}${pct}%`,
-        );
+      // Group by departure_date → min price per day
+      const byDate: Record<string, number> = {};
+      for (const row of dateHistory ?? []) {
+        if (!row.departure_date) continue;
+        const existing = byDate[row.departure_date];
+        if (existing === undefined || row.price_usd < existing) {
+          byDate[row.departure_date] = row.price_usd;
+        }
       }
+
+      const datePriceLines = Object.entries(byDate)
+        .map(([d, p]) => `  ${d}: $${Math.round(p)}`)
+        .join('\n');
+
+      // Find cheapest date in window (excluding the searched date itself)
+      const otherDates = Object.entries(byDate).filter(([d]) => d !== departureDate);
+      const cheapestAlt = otherDates.sort((a, b) => a[1] - b[1])[0] ?? null;
+      const saving = lowestPriceUsd && cheapestAlt ? Math.round(lowestPriceUsd - cheapestAlt[1]) : null;
+
+      const dayOfWeek = new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+
+      const seasonalLines = searchEvents.length > 0
+        ? searchEvents.map(e =>
+            `- ${e.name}: ${e.daysUntil === 0 ? 'currently active' : `in ${e.daysUntil} days`} (${e.demandLevel} demand)`
+          ).join('\n')
+        : 'None';
+
+      userContext = [
+        `Route: ${origin} → ${destination} (${cabinClass})`,
+        `Departure date: ${departureDate} (${dayOfWeek})`,
+        lowestPriceUsd ? `Lowest price in current results: $${Math.round(lowestPriceUsd)}` : null,
+        datePriceLines
+          ? `Historical prices for nearby dates:\n${datePriceLines}`
+          : 'No price history available for this route yet',
+        cheapestAlt && saving !== null && saving > 15
+          ? `Cheapest nearby date: ${cheapestAlt[0]} at $${Math.round(cheapestAlt[1])} (saves ~$${saving})`
+          : null,
+        `Seasonal events around travel date:\n${seasonalLines}`,
+      ].filter(Boolean).join('\n');
+
+      systemOverride = `You are Voya, an AI travel intelligence layer. A user just searched for flights on the route and date above.
+
+Generate up to 3 observations for the search results screen. Focus ONLY on these types: seasonal_demand, day_of_week_saving, fastest_route.
+
+Rules:
+- Use ONLY the data provided above — never invent prices or reference events not listed
+- If no price history exists, say so honestly (e.g. "no historical data yet for this route")
+- If a nearby date is significantly cheaper, recommend it with the exact saving
+- If a seasonal event is active or approaching, mention demand impact with specifics
+- Headlines ≤ 60 chars, body ≤ 120 chars
+- Tone: like a knowledgeable travel friend, confident and specific
+
+Each observation must have: type, headline, body, priority (1 = most important).
+Respond ONLY with valid JSON: { "observations": [...] }`;
+
+    } else {
+      // ── App-open mode: generate session-wide observations ──
+      const priceContext: string[] = [];
+      if (homeOrigin && homeDestination) {
+        const { data: snapshots } = await supabase
+          .from('price_history')
+          .select('price_usd, snapshot_at')
+          .eq('origin', homeOrigin)
+          .eq('destination', homeDestination)
+          .order('snapshot_at', { ascending: false })
+          .limit(10);
+
+        if (snapshots && snapshots.length > 0) {
+          const prices = snapshots.map(s => s.price_usd).filter(Boolean) as number[];
+          const avg    = prices.reduce((a, b) => a + b, 0) / prices.length;
+          const latest = prices[0];
+          const pct    = Math.round(((latest - avg) / avg) * 100);
+          priceContext.push(
+            `${homeOrigin}→${homeDestination}: latest $${Math.round(latest)}, ` +
+            `avg $${Math.round(avg)}, trend ${pct > 0 ? '+' : ''}${pct}%`,
+          );
+        }
+      }
+
+      const { count: alertCount } = await supabase
+        .from('price_alerts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      const { count: bookingCount } = await supabase
+        .from('bookings')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      const seasonalContext = upcomingEvents.length > 0
+        ? `Upcoming seasonal events (next 90 days):\n${upcomingEvents.map(e =>
+            `- ${e.name}: ${e.daysUntil === 0 ? 'currently active' : `starts in ${e.daysUntil} days`} (${e.demandLevel} demand)`
+          ).join('\n')}`
+        : 'Upcoming seasonal events: none in the next 90 days';
+
+      userContext = [
+        homeOrigin && homeDestination
+          ? `Home corridor: ${homeOrigin} → ${homeDestination}`
+          : 'No home corridor set yet',
+        preferredAirlines.length > 0
+          ? `Preferred airlines: ${preferredAirlines.join(', ')}`
+          : 'No preferred airlines set',
+        `Saved traveler profiles: ${savedTravelerCount}`,
+        `Past bookings: ${bookingCount ?? 0}`,
+        `Active price alerts: ${alertCount ?? 0}`,
+        dietaryPreference ? `Dietary preference: ${dietaryPreference}` : null,
+        ...priceContext,
+        seasonalContext,
+      ].filter(Boolean).join('\n');
     }
 
-    const { count: alertCount } = await supabase
-      .from('price_alerts')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('is_active', true);
-
-    const { count: bookingCount } = await supabase
-      .from('bookings')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id);
-
-    const userContext = [
-      homeOrigin && homeDestination
-        ? `Home corridor: ${homeOrigin} → ${homeDestination}`
-        : 'No home corridor set yet',
-      preferredAirlines.length > 0
-        ? `Preferred airlines: ${preferredAirlines.join(', ')}`
-        : 'No preferred airlines set',
-      `Saved traveler profiles: ${savedTravelerCount}`,
-      `Past bookings: ${bookingCount ?? 0}`,
-      `Active price alerts: ${alertCount ?? 0}`,
-      dietaryPreference ? `Dietary preference: ${dietaryPreference}` : null,
-      ...priceContext,
-    ].filter(Boolean).join('\n');
+    const userPrompt = searchContext
+      ? `User context:\n${userContext}`
+      : `Generate travel observations for this user:\n\n${userContext}`;
 
     const result = AI_PROVIDER === 'haiku'
-      ? await callHaiku(userContext)
-      : await callGrok(userContext);
+      ? await callHaiku(userPrompt, systemOverride ?? SYSTEM_PROMPT)
+      : await callGrok(userPrompt, systemOverride ?? SYSTEM_PROMPT);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

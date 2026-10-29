@@ -27,6 +27,62 @@ export function getIncludedCarryOnBags(offer: DuffelOffer): number {
   return carryOn.reduce((sum, b) => sum + b.quantity, 0);
 }
 
+export interface PassengerBaggageAllowance {
+  checkedCount:       number;
+  checkedMaxWeightKg: number | null;
+  carryOnCount:       number;
+  carryOnMaxWeightKg: number | null;
+}
+
+interface BaggageEntryLike {
+  type:               'checked' | 'carry_on';
+  quantity:           number;
+  maximum_weight_kg?: number | null;
+}
+
+interface SegmentPassengerLike {
+  passenger_id: string;
+  baggages:     BaggageEntryLike[];
+}
+
+// Duffel reports baggage per passenger per segment, not per offer/order —
+// shared by both the search/offer flow (getPassengerBaggageAllowance) and
+// the post-booking order flow (getOrderPassengerBaggageAllowance), since
+// child/infant allowances often differ from adults on the same booking.
+function computeAllowance(passengers: SegmentPassengerLike[] | undefined, duffelPassengerId: string): PassengerBaggageAllowance | null {
+  const pax = passengers?.find(p => p.passenger_id === duffelPassengerId);
+  if (!pax) return null;
+
+  const checked = pax.baggages.filter(b => b.type === 'checked');
+  const carryOn = pax.baggages.filter(b => b.type === 'carry_on');
+
+  const maxWeight = (bags: BaggageEntryLike[]): number | null =>
+    bags.reduce<number | null>((max, b) => {
+      if (b.maximum_weight_kg == null) return max;
+      return max == null ? b.maximum_weight_kg : Math.max(max, b.maximum_weight_kg);
+    }, null);
+
+  return {
+    checkedCount:       checked.reduce((sum, b) => sum + b.quantity, 0),
+    checkedMaxWeightKg: maxWeight(checked),
+    carryOnCount:       carryOn.reduce((sum, b) => sum + b.quantity, 0),
+    carryOnMaxWeightKg: maxWeight(carryOn),
+  };
+}
+
+// Looks up the specific Duffel passenger id (offer.passengers[i].id).
+export function getPassengerBaggageAllowance(offer: DuffelOffer, duffelPassengerId: string): PassengerBaggageAllowance | null {
+  const seg = offer.slices?.[0]?.segments?.[0];
+  return computeAllowance(seg?.passengers, duffelPassengerId);
+}
+
+// Same lookup against a Duffel order's segment (post-booking flow) — the
+// order and offer models report baggage identically, just under different
+// wrapper types, so the caller passes the segment's passengers array directly.
+export function getOrderPassengerBaggageAllowance(segmentPassengers: SegmentPassengerLike[] | undefined, duffelPassengerId: string): PassengerBaggageAllowance | null {
+  return computeAllowance(segmentPassengers, duffelPassengerId);
+}
+
 export function calculateCost(offer: DuffelOffer, bagCount: number = 2): CostBreakdown {
   const baseFare     = parseFloat(offer.total_amount);
   const serviceFee   = SERVICE_FEE_USD;

@@ -112,10 +112,11 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderResul
 }
 
 export interface InitiateBookingParams {
-  offerId:    string;
-  passengers: OrderPassengerPayload[];
-  bagCount:   number;
-  services?:  Array<{ id: string; quantity: number }>;
+  offerId:     string;
+  passengers:  OrderPassengerPayload[];
+  bagCount:    number;
+  isDomestic?: boolean; // same-country trip — server skips passport/identity documents
+  services?:   Array<{ id: string; quantity: number }>;
 }
 
 export type InitiateBookingResult =
@@ -124,6 +125,15 @@ export type InitiateBookingResult =
 
 export async function initiateBooking(params: InitiateBookingParams): Promise<InitiateBookingResult> {
   return proxyCall<InitiateBookingResult>('booking_initiate', params as unknown as Record<string, unknown>);
+}
+
+export interface DuffelOrderSegmentPassenger {
+  passenger_id: string;
+  baggages:     Array<{
+    type:               'checked' | 'carry_on';
+    quantity:           number;
+    maximum_weight_kg?: number | null;
+  }>;
 }
 
 export interface DuffelSegment {
@@ -135,6 +145,7 @@ export interface DuffelSegment {
   operating_carrier?:              { iata_code: string; name?: string };
   marketing_carrier_flight_number?: string;
   flight_number?:                   string;
+  passengers?:                      DuffelOrderSegmentPassenger[];
 }
 
 export interface DuffelSlice {
@@ -150,7 +161,10 @@ export interface DuffelOrderDetail {
   booking_reference: string;
   slices:            DuffelSlice[];
   passengers:        Array<{ id: string; type: string; given_name: string; family_name: string }>;
-  documents?:        Array<{ type: string; unique_identifier: string }>;
+  documents?:        Array<{ type: string; unique_identifier: string; passenger_ids?: string[] }>;
+  // Purchased ancillaries (seats, baggage) as confirmed on the order — seat
+  // entries carry the designator in metadata, keyed to the passenger(s) it's for.
+  services?:         Array<{ id: string; type: string; passenger_ids?: string[]; metadata?: { designator?: string } }>;
 }
 
 export async function getDuffelOrder(duffelOrderId: string): Promise<DuffelOrderDetail> {

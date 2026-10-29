@@ -13,6 +13,7 @@ import {
   previewOrderChange, confirmOrderChange, OrderChangePreview,
 } from '@/lib/duffel';
 import { useAuthStore } from '@/store/auth.store';
+import { getOrderPassengerBaggageAllowance } from '@/engine/total-cost';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
 import { Booking, BookingPassenger } from '@/types/booking';
 import { VoyaCard } from '@/components/voya/VoyaCard';
@@ -291,6 +292,16 @@ export default function BookingConfirmedScreen() {
       ? [{ name: profile.full_name, dietary: profile.dietary_preference ?? null }]
       : [];
 
+  // Baggage allowance per passenger — matched by name against the live
+  // Duffel order, since booking_passengers doesn't store the Duffel passenger id.
+  const firstOrderSegment = duffelOrder?.slices?.[0]?.segments?.[0];
+  const findDuffelPassengerId = (fullName: string): string | null => {
+    if (!duffelOrder) return null;
+    const norm = (s: string) => s.trim().toLowerCase();
+    const target = norm(fullName);
+    return duffelOrder.passengers.find(p => norm(`${p.given_name} ${p.family_name}`) === target)?.id ?? null;
+  };
+
   const email = session?.user?.email ?? '';
   const phone = profile?.phone ?? '';
   const isFuture  = booking?.departure_at ? new Date(booking.departure_at) > new Date() : false;
@@ -425,33 +436,19 @@ export default function BookingConfirmedScreen() {
             );
           })()}
 
-          {/* ── Booking info card (shared, fixed details) ── */}
-          {booking && (
-            <View style={{
-              borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
-              padding: 14, marginBottom: 12,
-            }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 1, marginBottom: 10 }}>
-                BOOKING DETAILS
-              </Text>
-              <InfoRow icon="airplane-outline" label={`${capitalize(booking.cabin_class ?? 'economy')} class`} />
-              <InfoRow
-                icon="briefcase-outline"
-                label={(booking.baggage_fee_usd ?? 0) > 0 ? 'Extra baggage added' : 'No extra baggage'}
-                muted={(booking.baggage_fee_usd ?? 0) === 0}
-              />
-              {duffelOrder?.documents?.map(doc => (
-                <InfoRow
-                  key={doc.unique_identifier}
-                  icon="ticket-outline"
-                  label={`E-ticket: ${doc.unique_identifier}`}
-                />
-              ))}
-            </View>
-          )}
-
           {/* ── Per-passenger cards ── */}
-          {paxList.map((p, i) => (
+          {paxList.map((p, i) => {
+            const duffelPaxId = findDuffelPassengerId(p.name);
+            const allowance   = duffelPaxId ? getOrderPassengerBaggageAllowance(firstOrderSegment?.passengers, duffelPaxId) : null;
+            const eTickets    = duffelOrder?.documents?.filter(doc =>
+              duffelPaxId && doc.passenger_ids ? doc.passenger_ids.includes(duffelPaxId) : i === 0
+            ) ?? [];
+            const seats       = duffelPaxId
+              ? (duffelOrder?.services ?? [])
+                  .filter(s => s.type === 'seat' && s.passenger_ids?.includes(duffelPaxId) && s.metadata?.designator)
+                  .map(s => s.metadata!.designator!)
+              : [];
+            return (
             <View key={i} style={{
               borderWidth: 1.5, borderColor: colors.border, borderRadius: 12,
               padding: 14, marginBottom: 12,
@@ -462,8 +459,38 @@ export default function BookingConfirmedScreen() {
               <Text style={{ fontSize: 19, fontWeight: '800', color: colors.text, letterSpacing: 0.5, marginBottom: 10 }}>
                 {toAirlineFormat(p.name)}
               </Text>
+              {booking && <InfoRow icon="airplane-outline" label={`${capitalize(booking.cabin_class ?? 'economy')} class`} />}
+              {booking && i === 0 && (
+                <InfoRow
+                  icon="pricetag-outline"
+                  label={(booking.baggage_fee_usd ?? 0) > 0 ? 'Extra baggage added to booking' : 'No extra baggage purchased'}
+                  muted={(booking.baggage_fee_usd ?? 0) === 0}
+                />
+              )}
+              {eTickets.map(doc => (
+                <InfoRow key={doc.unique_identifier} icon="ticket-outline" label={`E-ticket: ${doc.unique_identifier}`} />
+              ))}
+              {seats.length > 0 && (
+                <InfoRow icon="grid-outline" label={`Seat: ${seats.join(', ')}`} />
+              )}
               {p.dietary && p.dietary !== 'none' && (
                 <InfoRow icon="restaurant-outline" label={`${capitalize(p.dietary)} meal`} />
+              )}
+              {allowance && (
+                <>
+                  <InfoRow
+                    icon="briefcase-outline"
+                    label={allowance.checkedCount > 0
+                      ? `Checked: ${allowance.checkedCount} free${allowance.checkedMaxWeightKg ? ` · up to ${allowance.checkedMaxWeightKg}kg each` : ''}`
+                      : 'Checked: not included in this fare'}
+                  />
+                  <InfoRow
+                    icon="bag-handle-outline"
+                    label={allowance.carryOnCount > 0
+                      ? `Carry-on: ${allowance.carryOnCount} bag${allowance.carryOnCount > 1 ? 's' : ''}${allowance.carryOnMaxWeightKg ? ` · up to ${allowance.carryOnMaxWeightKg}kg each` : ''}`
+                      : 'Carry-on: not included in this fare'}
+                  />
+                </>
               )}
               {i === 0 && (
                 <>
@@ -472,7 +499,8 @@ export default function BookingConfirmedScreen() {
                 </>
               )}
             </View>
-          ))}
+            );
+          })}
 
           {/* ── Actions ── */}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>

@@ -13,7 +13,7 @@ export function useBookingFlow() {
     setConfirmed,
     setCreatingIntent, setConfirming, setError,
   } = useBookingStore();
-  const { bagCount } = useSearchStore();
+  const { bagCount, origin, destination } = useSearchStore();
 
   const startPayment = useCallback(async () => {
     if (!selectedOffer) return;
@@ -24,9 +24,18 @@ export function useBookingFlow() {
       // Read fresh from store so any normalisation done just before this call is picked up
       const freshPassengers = useBookingStore.getState().passengers;
 
+      // Only the primary traveler's email/phone are collected in the UI —
+      // every other passenger inherits them here regardless of what's in
+      // the store, so the server always receives usable contact info.
+      const primary = freshPassengers[0];
+
+      // Domestic trips (same-country origin/destination) don't collect
+      // passport info — the server skips identity documents entirely.
+      const isDomestic = !!(origin?.country && destination?.country && origin.country === destination.country);
+
       // Build services array: seat selections + extra baggage services
       const { selectedSeats, selectedServices } = useBookingStore.getState();
-      const seatServices = Object.values(selectedSeats).map(id => ({ id, quantity: 1 }));
+      const seatServices = Object.values(selectedSeats).map(s => ({ id: s.serviceId, quantity: 1 }));
       // Merge: baggage services first (may have quantity > 1), then seat services
       const mergedServices = [
         ...selectedServices,
@@ -35,7 +44,7 @@ export function useBookingFlow() {
 
       const result = await initiateBooking({
         offerId:    selectedOffer.id,
-        passengers: freshPassengers.map(p => ({
+        passengers: freshPassengers.map((p, i) => ({
           type:            p.type,
           savedTravelerId: p.savedTravelerId,
           givenName:       p.givenName,
@@ -45,11 +54,12 @@ export function useBookingFlow() {
           passportCountry: p.passportCountry,
           passportExpiry:  p.passportExpiry,
           gender:          p.gender,
-          email:           p.email,
-          phone:           p.phone,
+          email:           i === 0 ? p.email : (primary?.email ?? p.email),
+          phone:           i === 0 ? p.phone : (primary?.phone ?? p.phone),
           dietary:         p.dietary || null,
         })),
         bagCount,
+        isDomestic,
         services: mergedServices.length > 0 ? mergedServices : undefined,
       });
 
@@ -114,7 +124,7 @@ export function useBookingFlow() {
       setConfirming(false);
       setError(err instanceof Error ? err.message : 'Booking failed');
     }
-  }, [selectedOffer, bagCount]); // selectedSeats/selectedServices read via getState() inside callback
+  }, [selectedOffer, bagCount, origin, destination]); // selectedSeats/selectedServices read via getState() inside callback
 
   return { startPayment };
 }

@@ -37,6 +37,73 @@ function assertIsoDate(value: string, label: string): void {
   }
 }
 
+// Age brackets used at search time (store/search.store.ts PassengerCounts):
+// adults 12+, children 2–11, infants under 2. Duffel rejects the whole order
+// with an opaque "type does not match date of birth" error if these drift —
+// this catches it with a diagnosable message naming the passenger.
+function ageAt(dobIso: string, referenceIso: string): number {
+  const d = new Date(dobIso);
+  const r = new Date(referenceIso);
+  let age = r.getUTCFullYear() - d.getUTCFullYear();
+  const monthDiff = r.getUTCMonth() - d.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && r.getUTCDate() < d.getUTCDate())) age--;
+  return age;
+}
+
+function expectedTypeForAge(age: number): string {
+  if (age < 2)  return 'infant_without_seat';
+  if (age < 12) return 'child';
+  return 'adult';
+}
+
+function assertTypeMatchesAge(dob: string, type: string, departureIso: string, label: string): void {
+  const age = ageAt(dob, departureIso);
+  const expected = expectedTypeForAge(age);
+  if (expected !== type) {
+    throw new Error(
+      `${label}: date of birth (${dob}) makes them ${age} years old at departure, which doesn't match ` +
+      `the "${type}" passenger type selected during search. Go back to search and adjust passenger counts, ` +
+      `or correct the date of birth.`
+    );
+  }
+}
+
+// Duffel's balance-payment order creation requires `payments[0].amount` to
+// equal the order's TRUE total, including any selected seat/baggage services
+// — not just the base offer price. The client only sends service id+quantity
+// (no price), so this re-derives each service's cost from the offer's own
+// available services and seat maps before the order is created.
+async function computeServicesTotal(offerId: string, extraServices: Array<{ id: string; quantity: number }>): Promise<number> {
+  if (!extraServices.length) return 0;
+
+  const priceById = new Map<string, number>();
+
+  const baggage = await duffel('GET', `/air/offers/${offerId}/available_services`);
+  (Array.isArray(baggage) ? baggage : (baggage ?? [])).forEach((s: any) => {
+    if (s.type === 'baggage') priceById.set(s.id, parseFloat(s.total_amount ?? '0'));
+  });
+
+  const stillUnpriced = extraServices.some(s => !priceById.has(s.id));
+  if (stillUnpriced) {
+    const seatMaps = await duffel('GET', `/air/seat_maps?offer_id=${offerId}`);
+    (Array.isArray(seatMaps) ? seatMaps : (seatMaps ?? [])).forEach((map: any) => {
+      (map.cabins ?? []).forEach((cabin: any) => {
+        (cabin.rows ?? []).forEach((row: any) => {
+          (row.sections ?? []).forEach((section: any) => {
+            (section.elements ?? []).forEach((el: any) => {
+              (el.available_services ?? []).forEach((svc: any) => {
+                priceById.set(svc.id, parseFloat(svc.total_amount ?? '0'));
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+
+  return extraServices.reduce((sum, s) => sum + (priceById.get(s.id) ?? 0) * s.quantity, 0);
+}
+
 function getIncludedBags(offer: any): number {
   const pax = offer?.slices?.[0]?.segments?.[0]?.passengers?.[0];
   if (!pax) return 0;
@@ -229,7 +296,7 @@ serve(async (req) => {
       }
 
       case 'booking_initiate': {
-        const { offerId, passengers: paxList, bagCount, services: extraServices = [] } = payload as {
+        const { offerId, passengers: paxList, bagCount, isDomestic = false, services: extraServices = [] } = payload as {
           offerId:    string;
           passengers: Array<{
             type:            string;
@@ -244,45 +311,53 @@ serve(async (req) => {
             email:           string;
             phone:           string;
           }>;
-          bagCount:  number;
-          services?: Array<{ id: string; quantity: number }>;
+          bagCount:    number;
+          isDomestic?: boolean; // same-country trip — skip passport/identity documents
+          services?:   Array<{ id: string; quantity: number }>;
         };
 
         // Validate every passenger's dates before doing anything else. Duffel's
         // own error for a bad born_on ("Field 'born_on' is invalid...") doesn't
         // say which passenger or what the value was — this does, so a bad date
         // that somehow reaches this function despite client-side validation is
-        // immediately diagnosable instead of a mystery 422.
+        // immediately diagnosable instead of a mystery 422. Passport expiry
+        // isn't collected for domestic trips, so it's skipped here too.
         paxList.forEach((p, i) => {
           const label = `${p.givenName || 'Passenger'} ${p.familyName || ''}`.trim() || `Passenger ${i + 1}`;
           assertIsoDate(p.dateOfBirth, `${label}: date of birth`);
-          assertIsoDate(p.passportExpiry, `${label}: passport expiry`);
+          if (!isDomestic) {
+            assertIsoDate(p.passportExpiry, `${label}: passport expiry`);
+          }
         });
 
         // Fetch offer to get passenger IDs, flight details, and authoritative pricing.
         const offer = await duffel('GET', `/air/offers/${offerId}`);
         const offerPaxIds: string[] = (offer.passengers ?? []).map((p: { id: string }) => p.id);
 
+        // Passenger type (adult/child/infant) was fixed at search time and must
+        // match the passenger's actual age at departure, or Duffel rejects the
+        // whole order with an opaque "type does not match date of birth" error.
+        const departureIso: string = offer.slices?.[0]?.segments?.[0]?.departing_at ?? new Date().toISOString();
+        paxList.forEach((p, i) => {
+          const label = `${p.givenName || 'Passenger'} ${p.familyName || ''}`.trim() || `Passenger ${i + 1}`;
+          assertTypeMatchesAge(p.dateOfBirth, p.type, departureIso, label);
+        });
+
         // E.164 with minimum 11 digits total (catches too-short numbers like +9727993028)
         const PHONE_RE = /^\+[1-9]\d{10,14}$/;
 
-        // Validate all passenger phones before hitting Duffel
-        for (let i = 0; i < paxList.length; i++) {
-          if (paxList[i].type === 'infant_without_seat') continue;
-          const norm = toE164(paxList[i].phone ?? '');
-          if (!PHONE_RE.test(norm)) {
-            throw new Error(
-              `Phone number "${norm}" for passenger ${i + 1} is invalid. ` +
-              `Must be a full international number with country code, e.g. +12125551234 (US), +919876543210 (India), +923001234567 (Pakistan). ` +
-              `Go back to Passenger details and update it.`
-            );
-          }
+        // Only the primary (first) passenger's phone is collected in the UI —
+        // everyone else inherits it. Validate just the primary's.
+        const primaryPhoneNorm = toE164(paxList[0]?.phone ?? '');
+        if (!PHONE_RE.test(primaryPhoneNorm)) {
+          throw new Error(
+            `Phone number "${primaryPhoneNorm}" for the primary passenger is invalid. ` +
+            `Must be a full international number with country code, e.g. +12125551234 (US), +919876543210 (India), +923001234567 (Pakistan). ` +
+            `Go back to Passenger details and update it.`
+          );
         }
 
         const duffelPassengers = paxList.map((p, i) => {
-          const norm = toE164(p.phone ?? '');
-          // Infants inherit first adult's validated phone
-          const adultPhone = toE164(paxList.find(x => x.type !== 'infant_without_seat')?.phone ?? '');
           return {
             id:           offerPaxIds[i] ?? '',
             title:        'mr',
@@ -291,13 +366,19 @@ serve(async (req) => {
             born_on:      p.dateOfBirth,
             gender:       p.gender,
             email:        p.email || paxList[0].email,
-            phone_number: p.type === 'infant_without_seat' ? adultPhone : norm,
-            identity_documents: [{
-              unique_identifier:    p.passportNumber,
-              issuing_country_code: p.passportCountry,
-              expires_on:           p.passportExpiry,
-              type:                 'passport',
-            }],
+            // Only the primary passenger's phone is collected — everyone else
+            // (including infants) inherits it.
+            phone_number: primaryPhoneNorm,
+            // Domestic trips don't collect passport info — omit identity
+            // documents entirely rather than send an empty/placeholder one.
+            ...(isDomestic ? {} : {
+              identity_documents: [{
+                unique_identifier:    p.passportNumber,
+                issuing_country_code: p.passportCountry,
+                expires_on:           p.passportExpiry,
+                type:                 'passport',
+              }],
+            }),
           };
         });
 
@@ -308,6 +389,13 @@ serve(async (req) => {
           if (!offer.total_amount || !offer.total_currency) {
             throw new Error('Offer price is missing — it may have expired. Please go back and search again.');
           }
+
+          // Balance payments must equal the order's TRUE total, including any
+          // selected seats/baggage — not just the base offer price, or Duffel
+          // rejects the order with "Field 'payments' must match the order total amount".
+          const servicesTotal   = await computeServicesTotal(offerId, extraServices);
+          const payableAmount   = (parseFloat(offer.total_amount) + servicesTotal).toFixed(2);
+
           const order = await duffel('POST', '/air/orders', {
             type:            'instant',
             selected_offers: [offerId],
@@ -315,7 +403,7 @@ serve(async (req) => {
             services:        extraServices,
             payments:        [{
               type:     'balance',
-              amount:   offer.total_amount,
+              amount:   payableAmount,
               currency: offer.total_currency,
             }],
           });
@@ -573,6 +661,18 @@ serve(async (req) => {
         await admin.from('bookings').delete().eq('user_id', user.id);
         await admin.from('price_alerts').delete().eq('user_id', user.id);
         await admin.from('saved_travelers').delete().eq('user_id', user.id);
+
+        // Contact Us: child rows (attachments, replies) cascade via FK when
+        // contact_queries rows are deleted, but Storage objects don't cascade
+        // from a DB delete — those are removed explicitly first.
+        const { data: contactFiles } = await admin.storage.from('contact-attachments').list(user.id);
+        if (contactFiles && contactFiles.length > 0) {
+          await admin.storage.from('contact-attachments').remove(
+            contactFiles.map((f: { name: string }) => `${user.id}/${f.name}`),
+          );
+        }
+        await admin.from('contact_queries').delete().eq('user_id', user.id);
+
         await admin.from('users').delete().eq('id', user.id);
 
         const { error: authDeleteErr } = await admin.auth.admin.deleteUser(user.id);

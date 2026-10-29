@@ -5,26 +5,41 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useBookingStore, PassengerInput } from '@/store/booking.store';
 import { useAuthStore } from '@/store/auth.store';
+import { useSearchStore } from '@/store/search.store';
 import { useSavedTravelers } from '@/hooks/useSavedTravelers';
 import { PassengerForm } from '@/components/booking/PassengerForm';
 import { VoyaCard } from '@/components/voya/VoyaCard';
 import { useVoya } from '@/hooks/useVoya';
 import { colors, fontSize, spacing } from '@/constants/design';
+import { ageAt, expectedTypeForAge } from '@/engine/passenger-age';
 
-function validate(passengers: PassengerInput[]): string | null {
+function validate(passengers: PassengerInput[], departureDate: string, isDomestic: boolean): string | null {
   for (let i = 0; i < passengers.length; i++) {
     const p = passengers[i];
+    const isPrimary = i === 0; // only the primary traveler's contact info is collected
     const isInfant = p.type === 'infant_without_seat';
     const label = isInfant ? `Infant ${i + 1}` : p.type === 'child' ? `Child ${i + 1}` : `Adult ${i + 1}`;
     if (!p.givenName.trim())      return `${label}: first name required`;
     if (!p.familyName.trim())     return `${label}: last name required`;
     if (!p.dateOfBirth.match(/^\d{4}-\d{2}-\d{2}$/)) return `${label}: date of birth must be YYYY-MM-DD`;
     if (!p.gender)                return `${label}: gender required`;
-    if (!p.passportNumber.trim()) return `${label}: passport number required`;
-    if (!p.passportCountry.match(/^[A-Z]{2}$/)) return `${label}: nationality must be 2-letter code`;
-    if (!p.passportExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) return `${label}: expiry must be YYYY-MM-DD`;
-    // Email & phone not required for infants — copied from first adult at booking time
-    if (!isInfant) {
+
+    // Date of birth must match the passenger type selected during search
+    // (adult/child/infant) — otherwise Duffel rejects the whole order with
+    // an opaque error. Catch it here with a fixable message instead.
+    const age = ageAt(p.dateOfBirth, departureDate);
+    if (expectedTypeForAge(age) !== p.type) {
+      return `${label}: date of birth makes them ${age} years old at departure, which doesn't match the passenger type selected during search. Go back to search and adjust passenger counts, or correct the date of birth.`;
+    }
+
+    if (!isDomestic) {
+      if (!p.passportNumber.trim()) return `${label}: passport number required`;
+      if (!p.passportCountry.match(/^[A-Z]{2}$/)) return `${label}: nationality must be 2-letter code`;
+      if (!p.passportExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) return `${label}: expiry must be YYYY-MM-DD`;
+    }
+    // Email & phone only collected for the primary traveler — copied to
+    // everyone else at booking time.
+    if (isPrimary) {
       if (!p.email.includes('@')) return `${label}: valid email required`;
       if (!p.phone.trim())        return `${label}: phone required`;
       const stripped = p.phone.replace(/[^\d+]/g, '');
@@ -45,11 +60,15 @@ const PHONE_PREFIX: Record<string, string> = {
 };
 
 export default function PassengersScreen() {
-  const { passengers, updatePassenger } = useBookingStore();
+  const { passengers, updatePassenger, selectedOffer } = useBookingStore();
   const { session, profile } = useAuthStore();
+  const { origin, destination } = useSearchStore();
   const { travelers } = useSavedTravelers();
   const { observation, dismiss } = useVoya('passengers');
   const [attempted, setAttempted] = useState(false);
+
+  const isDomestic = !!(origin?.country && destination?.country && origin.country === destination.country);
+  const departureDate = selectedOffer?.slices?.[0]?.segments?.[0]?.departing_at ?? new Date().toISOString();
 
   // Effect 1: fill name / email / phone from profile — re-runs if profile loads late
   useEffect(() => {
@@ -91,13 +110,15 @@ export default function PassengersScreen() {
     const updates: Partial<PassengerInput> = {};
     if (!firstAdult.savedTravelerId) updates.savedTravelerId = primary.id;
     if (!firstAdult.dateOfBirth)     updates.dateOfBirth     = primary.date_of_birth   ?? '';
-    if (!firstAdult.passportNumber)  updates.passportNumber  = primary.passport_number ?? '';
-    if (!firstAdult.passportCountry) updates.passportCountry = primary.passport_country ?? '';
-    if (!firstAdult.passportExpiry)  updates.passportExpiry  = primary.passport_expiry ?? '';
+    if (!isDomestic) {
+      if (!firstAdult.passportNumber)  updates.passportNumber  = primary.passport_number ?? '';
+      if (!firstAdult.passportCountry) updates.passportCountry = primary.passport_country ?? '';
+      if (!firstAdult.passportExpiry)  updates.passportExpiry  = primary.passport_expiry ?? '';
+    }
     if (!firstAdult.dietary)         updates.dietary         = primary.dietary_preference ?? '';
     if (!firstAdult.gender)          updates.gender          = (primary as any).gender ?? '';
     if (Object.keys(updates).length) updatePassenger(firstAdult.id, updates);
-  }, [travelers]);
+  }, [travelers, isDomestic]);
 
   // Detect country from device location → pre-fill nationality only
   // (phone is pre-filled from profile; reading live store state avoids stale-closure overwrite)
@@ -114,7 +135,7 @@ export default function PassengersScreen() {
         // Read current store state — not stale closure — so we don't overwrite profile phone
         const current = useBookingStore.getState().passengers;
         current.forEach(p => {
-          if (!p.passportCountry) updatePassenger(p.id, { passportCountry: iso });
+          if (!isDomestic && !p.passportCountry) updatePassenger(p.id, { passportCountry: iso });
           if (prefix) {
             if (!p.phone) {
               updatePassenger(p.id, { phone: prefix + ' ' });
@@ -129,7 +150,7 @@ export default function PassengersScreen() {
 
   const onContinue = () => {
     setAttempted(true);
-    const err = validate(passengers);
+    const err = validate(passengers, departureDate, isDomestic);
     if (err) {
       Alert.alert('Missing info', err);
       return;
@@ -174,6 +195,8 @@ export default function PassengersScreen() {
             key={p.id}
             passenger={p}
             index={i}
+            isPrimary={i === 0}
+            isDomestic={isDomestic}
             savedTravelers={travelers}
             onChange={updates => updatePassenger(p.id, updates)}
           />

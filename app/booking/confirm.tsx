@@ -10,7 +10,7 @@ import { PriceSummary } from '@/components/booking/PriceSummary';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
 import { VoyaCard } from '@/components/voya/VoyaCard';
 import { useVoya } from '@/hooks/useVoya';
-import { getFareType } from '@/engine/total-cost';
+import { getFareType, getPassengerBaggageAllowance } from '@/engine/total-cost';
 import { colors, fontSize, spacing } from '@/constants/design';
 
 function fmt(iso: string) {
@@ -44,7 +44,7 @@ function CheckRow({ checked, onToggle, label }: { checked: boolean; onToggle: ()
 }
 
 export default function ConfirmScreen() {
-  const { selectedOffer, passengers, isCreatingIntent, isConfirming, error, updatePassenger } = useBookingStore();
+  const { selectedOffer, passengers, selectedSeats, isCreatingIntent, isConfirming, error, updatePassenger } = useBookingStore();
   const { bagCount } = useSearchStore();
   const { startPayment } = useBookingFlow();
   const { observation, dismiss } = useVoya('confirm');
@@ -77,20 +77,26 @@ export default function ConfirmScreen() {
     }
     setCheckError(false);
 
-    // Validate + normalise phone numbers to E.164 before submitting
-    for (const p of passengers) {
-      if (p.type === 'infant_without_seat') continue;
-      const stripped  = p.phone.replace(/[^\d+]/g, '');
-      const e164      = stripped.startsWith('+') ? stripped : `+${stripped}`;
-      if (!/^\+[1-9]\d{10,14}$/.test(e164)) {
-        setPhoneError(
-          `${p.givenName || 'Passenger'}: phone number must include country code — e.g. +1 555 000 0000`
-        );
-        return;
-      }
-      updatePassenger(p.id, { phone: e164 });
+    // Only the primary (first) passenger's phone is collected — validate
+    // and normalise it to E.164, then copy to everyone else so both the
+    // summary below and the booking payload match.
+    const primary  = passengers[0];
+    const stripped = (primary?.phone ?? '').replace(/[^\d+]/g, '');
+    const e164     = stripped.startsWith('+') ? stripped : `+${stripped}`;
+    if (!/^\+[1-9]\d{10,14}$/.test(e164)) {
+      setPhoneError(
+        `${primary?.givenName || 'Primary passenger'}: phone number must include country code — e.g. +1 555 000 0000`
+      );
+      return;
     }
     setPhoneError(null);
+    passengers.forEach((p, i) => {
+      if (i === 0) {
+        if (p.phone !== e164) updatePassenger(p.id, { phone: e164 });
+      } else {
+        updatePassenger(p.id, { phone: e164, email: primary?.email ?? p.email });
+      }
+    });
     startPayment();
   };
 
@@ -280,7 +286,14 @@ export default function ConfirmScreen() {
             PASSENGER DETAILS
           </Text>
 
-          {passengers.map((p, i) => (
+          {passengers.map((p, i) => {
+            const duffelPaxId = selectedOffer.passengers?.[i]?.id;
+            const allowance   = duffelPaxId ? getPassengerBaggageAllowance(selectedOffer, duffelPaxId) : null;
+            const segmentIds  = selectedOffer.slices.flatMap(sl => sl.segments.map(seg => seg.id));
+            const seats       = duffelPaxId
+              ? segmentIds.map(segId => selectedSeats[`${segId}__${duffelPaxId}`]?.designator).filter((d): d is string => !!d)
+              : [];
+            return (
             <View key={p.id} style={[
               { paddingBottom: 12 },
               i < passengers.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border, marginBottom: 12 },
@@ -313,16 +326,20 @@ export default function ConfirmScreen() {
                     </Text>
                   </View>
                 ) : null}
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Passport no.</Text>
-                  <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600', letterSpacing: 1 }}>
-                    {maskPassport(p.passportNumber)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Nationality</Text>
-                  <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600' }}>{p.passportCountry}</Text>
-                </View>
+                {p.passportNumber ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Passport no.</Text>
+                    <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600', letterSpacing: 1 }}>
+                      {maskPassport(p.passportNumber)}
+                    </Text>
+                  </View>
+                ) : null}
+                {p.passportCountry ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Nationality</Text>
+                    <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600' }}>{p.passportCountry}</Text>
+                  </View>
+                ) : null}
                 {p.passportExpiry ? (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Passport expiry</Text>
@@ -341,6 +358,34 @@ export default function ConfirmScreen() {
                     <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600' }}>{p.phone}</Text>
                   </View>
                 ) : null}
+                {allowance ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Checked bags</Text>
+                    <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600', flex: 1 }}>
+                      {allowance.checkedCount > 0
+                        ? `${allowance.checkedCount} free${allowance.checkedMaxWeightKg ? ` · up to ${allowance.checkedMaxWeightKg}kg each` : ''}`
+                        : 'Not included in this fare'}
+                    </Text>
+                  </View>
+                ) : null}
+                {allowance ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Carry-on</Text>
+                    <Text style={{ fontSize: fontSize.label, color: colors.text, fontWeight: '600', flex: 1 }}>
+                      {allowance.carryOnCount > 0
+                        ? `${allowance.carryOnCount} bag${allowance.carryOnCount > 1 ? 's' : ''}${allowance.carryOnMaxWeightKg ? ` · up to ${allowance.carryOnMaxWeightKg}kg each` : ''}`
+                        : 'Not included in this fare'}
+                    </Text>
+                  </View>
+                ) : null}
+                {seats.length > 0 ? (
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Seat</Text>
+                    <Text style={{ fontSize: fontSize.label, color: colors.accent, fontWeight: '700' }}>
+                      {seats.join(', ')}
+                    </Text>
+                  </View>
+                ) : null}
                 {p.dietary ? (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <Text style={{ fontSize: fontSize.label, color: colors.textMuted, width: 110 }}>Meal preference</Text>
@@ -349,7 +394,8 @@ export default function ConfirmScreen() {
                 ) : null}
               </View>
             </View>
-          ))}
+            );
+          })}
 
           <CheckRow
             checked={passengersChecked}

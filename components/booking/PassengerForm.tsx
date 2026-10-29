@@ -18,6 +18,8 @@ const TYPE_LABEL: Record<PassengerType, { title: string; ionicon: IoniconName; n
 interface Props {
   passenger:      PassengerInput;
   index:          number;
+  isPrimary:      boolean; // only the primary traveler's email/phone are collected
+  isDomestic:     boolean; // domestic trips skip passport fields entirely
   savedTravelers: SavedTraveler[];
   onChange:       (updates: Partial<PassengerInput>) => void;
 }
@@ -49,7 +51,7 @@ function formatDateInput(raw: string, prev: string): string {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
 }
 
-export function PassengerForm({ passenger, index, savedTravelers, onChange }: Props) {
+export function PassengerForm({ passenger, index, isPrimary, isDomestic, savedTravelers, onChange }: Props) {
   const prevDob    = useRef(passenger.dateOfBirth);
   const prevExpiry = useRef(passenger.passportExpiry);
 
@@ -183,31 +185,37 @@ export function PassengerForm({ passenger, index, savedTravelers, onChange }: Pr
         </View>
       </View>
 
-      <Input label="Passport number *" value={passenger.passportNumber}
-        onChangeText={v => onChange({ passportNumber: v })}
-        autoCapitalize="characters" autoCorrect={false} />
+      {!isDomestic && (
+        <>
+          <Input label="Passport number *" value={passenger.passportNumber}
+            onChangeText={v => onChange({ passportNumber: v })}
+            autoCapitalize="characters" autoCorrect={false} />
 
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <Input label="Nationality *" value={passenger.passportCountry}
-            onChangeText={v => onChange({ passportCountry: v.toUpperCase() })}
-            autoCapitalize="characters" maxLength={2} placeholder="US" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Input label="Passport expiry *" value={passenger.passportExpiry}
-            onChangeText={handleExpiryChange}
-            keyboardType="numeric" placeholder="YYYY-MM-DD" />
-        </View>
-      </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Input label="Nationality *" value={passenger.passportCountry}
+                onChangeText={v => onChange({ passportCountry: v.toUpperCase() })}
+                autoCapitalize="characters" maxLength={2} placeholder="US" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Input label="Passport expiry *" value={passenger.passportExpiry}
+                onChangeText={handleExpiryChange}
+                keyboardType="numeric" placeholder="YYYY-MM-DD" />
+            </View>
+          </View>
+        </>
+      )}
 
-      {isInfant ? (
+      {isInfant || !isPrimary ? (
         <View style={{
           backgroundColor: '#F0F9FF', borderRadius: 10,
           borderWidth: 1, borderColor: '#BAE6FD',
           padding: 10, marginBottom: 12,
         }}>
           <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '600' }}>
-            ✈ Infant contact details (email & phone) will use the first adult's information.
+            ✈ {isInfant
+              ? "Infant contact details (email & phone) will use the first adult's information."
+              : "Email & phone will use the primary traveler's information."}
           </Text>
         </View>
       ) : (

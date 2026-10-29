@@ -2,17 +2,17 @@ import { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SeatMap, SeatElement } from '@/lib/duffel';
-import { PassengerInput } from '@/store/booking.store';
+import { PassengerInput, SelectedSeat, SelectedSeats } from '@/store/booking.store';
 import { colors, fontSize } from '@/constants/design';
 
 interface Props {
   seatMaps:   SeatMap[];
   passengers: PassengerInput[];
-  // key: `${segmentId}__${duffelPaxId}` → serviceId
-  selected:   Record<string, string>;
+  // key: `${segmentId}__${duffelPaxId}` → { serviceId, designator }
+  selected:   SelectedSeats;
   // duffelPaxId is the Duffel offer passenger id (needed to find matching services)
   duffelPassengerIds: string[];
-  onSelect:   (segmentId: string, passengerId: string, serviceId: string | null) => void;
+  onSelect:   (segmentId: string, passengerId: string, seat: SelectedSeat | null) => void;
   loading?:   boolean;
 }
 
@@ -22,12 +22,12 @@ function getSeatState(
   el:          SeatElement,
   segmentId:   string,
   duffelPaxId: string,
-  selected:    Record<string, string>,
+  selected:    SelectedSeats,
 ): { state: SeatState; serviceId: string | null } {
   if (el.type !== 'seat' || !el.designator) return { state: 'blocked', serviceId: null };
   const key = `${segmentId}__${duffelPaxId}`;
   const svc = el.available_services?.find(s => s.passenger_id === duffelPaxId) ?? null;
-  if (selected[key] && el.available_services?.some(s => s.id === selected[key])) {
+  if (selected[key] && el.available_services?.some(s => s.id === selected[key].serviceId)) {
     return { state: 'selected', serviceId: svc?.id ?? null };
   }
   if (!svc) return { state: 'taken', serviceId: null };
@@ -47,7 +47,7 @@ function SeatButton({
   el, segmentId, duffelPaxId, selected, onPress,
 }: {
   el: SeatElement; segmentId: string; duffelPaxId: string;
-  selected: Record<string, string>;
+  selected: SelectedSeats;
   onPress: (serviceId: string | null, designator: string) => void;
 }) {
   const { state, serviceId } = getSeatState(el, segmentId, duffelPaxId, selected);
@@ -88,10 +88,43 @@ export function SeatMapSelector({ seatMaps, passengers, selected, duffelPassenge
 
   if (!seatMaps.length) {
     return (
-      <View style={{ padding: 16, backgroundColor: '#F9FAFB', borderRadius: 10 }}>
-        <Text style={{ fontSize: 13, color: colors.textMuted }}>
-          Seat selection not available for this flight.
+      <View style={{ backgroundColor: '#F0F6FF', borderRadius: 12, borderWidth: 1.5, borderColor: '#BFDBFE', padding: 14 }}>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E40AF', marginBottom: 6 }}>
+          Seat map not available yet
         </Text>
+        <Text style={{ fontSize: 13, color: colors.textMuted, lineHeight: 19, marginBottom: 12 }}>
+          This airline hasn't released seat maps for your flight yet — this is common and doesn't affect your booking.
+        </Text>
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+            <View style={{
+              width: 22, height: 22, borderRadius: 11,
+              backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>1</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Online check-in (24–48h before departure)</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2 }}>
+                Most airlines open seat selection on their app or website when check-in goes live.
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+            <View style={{
+              width: 22, height: 22, borderRadius: 11,
+              backgroundColor: '#2563EB', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+            }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>2</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Airport check-in counter</Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted, lineHeight: 17, marginTop: 2 }}>
+                Ask the agent for your preferred seat — window, aisle, or extra legroom — when you check in at the airport.
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
     );
   }
@@ -107,7 +140,7 @@ export function SeatMapSelector({ seatMaps, passengers, selected, duffelPassenge
   const selectedKey = `${segId}__${duffelId}`;
   const currentSeat = cabin.rows.flatMap(r =>
     r.sections.flatMap(s => s.elements)
-  ).find(el => el.available_services?.some(sv => sv.id === selected[selectedKey]));
+  ).find(el => el.available_services?.some(sv => sv.id === selected[selectedKey]?.serviceId));
 
   return (
     <View>
@@ -194,7 +227,9 @@ export function SeatMapSelector({ seatMaps, passengers, selected, duffelPassenge
                         segmentId={segId}
                         duffelPaxId={duffelId}
                         selected={selected}
-                        onPress={(serviceId) => onSelect(segId, duffelId, serviceId)}
+                        onPress={(serviceId, designator) =>
+                          onSelect(segId, duffelId, serviceId ? { serviceId, designator } : null)
+                        }
                       />
                     );
                   }
@@ -227,6 +262,40 @@ export function SeatMapSelector({ seatMaps, passengers, selected, duffelPassenge
           </View>
         ))}
       </View>
+
+      {/* Seat summary — every passenger, every segment, regardless of active tab */}
+      {passengers.length > 0 && (
+        <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, gap: 6 }}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.8 }}>
+            SEAT SUMMARY
+          </Text>
+          {passengers.map((p, i) => {
+            const paxDuffelId = duffelPassengerIds[i] ?? '';
+            const seats = seatMaps
+              .map((m, mi) => {
+                const s = selected[`${m.segment_id}__${paxDuffelId}`];
+                return s ? { segIdx: mi, designator: s.designator } : null;
+              })
+              .filter((x): x is { segIdx: number; designator: string } => !!x);
+            return (
+              <View key={p.id} style={{ flexDirection: 'row', gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text, width: 90 }}>
+                  {p.givenName || `Passenger ${i + 1}`}
+                </Text>
+                <Text style={{
+                  fontSize: 12, flex: 1,
+                  color: seats.length ? colors.accent : colors.textMuted,
+                  fontWeight: seats.length ? '700' : '400',
+                }}>
+                  {seats.length
+                    ? seats.map(s => seatMaps.length > 1 ? `${s.designator} (Seg ${s.segIdx + 1})` : s.designator).join(', ')
+                    : 'No seat selected'}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 }

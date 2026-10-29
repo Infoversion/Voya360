@@ -30,8 +30,13 @@ function blankPassenger(id: string, type: PassengerType = 'adult'): PassengerInp
   };
 }
 
-// key: `${segmentId}__${passengerId}` → Duffel seat service id
-export type SelectedSeats = Record<string, string>;
+// key: `${segmentId}__${passengerId}` → Duffel seat service id + seat number,
+// so the designator (e.g. "14A") can be shown later without re-fetching seat maps.
+export interface SelectedSeat {
+  serviceId:  string;
+  designator: string;
+}
+export type SelectedSeats = Record<string, SelectedSeat>;
 
 interface BookingState {
   selectedOffer:    DuffelOffer | null;
@@ -54,7 +59,7 @@ interface BookingState {
   setCreatingIntent:   (v: boolean) => void;
   setConfirming:       (v: boolean) => void;
   setError:            (msg: string | null) => void;
-  setSeat:             (segmentId: string, passengerId: string, serviceId: string | null) => void;
+  setSeat:             (segmentId: string, passengerId: string, seat: SelectedSeat | null) => void;
   setSelectedServices: (services: Array<{ id: string; quantity: number }>) => void;
   reset:               () => void;
 }
@@ -102,10 +107,10 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   setConfirming:    (v) => set({ isConfirming: v }),
   setError:         (msg) => set({ error: msg }),
 
-  setSeat: (segmentId, passengerId, serviceId) => set(s => {
+  setSeat: (segmentId, passengerId, seat) => set(s => {
     const key = `${segmentId}__${passengerId}`;
     const next = { ...s.selectedSeats };
-    if (serviceId) next[key] = serviceId; else delete next[key];
+    if (seat) next[key] = seat; else delete next[key];
     return { selectedSeats: next };
   }),
 
