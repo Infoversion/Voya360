@@ -420,9 +420,17 @@ export default function ConfirmScreen() {
         {error && (
           <View style={{
             backgroundColor: '#FEF2F2', borderRadius: 10,
-            padding: 12, marginBottom: 16,
+            padding: 12, marginBottom: 16, gap: 10,
           }}>
             <Text style={{ fontSize: fontSize.label, color: '#DC2626' }}>{error}</Text>
+            {error.toLowerCase().includes('expired') && (
+              <TouchableOpacity
+                onPress={() => router.replace('/(tabs)')}
+                style={{ backgroundColor: colors.accent, borderRadius: 8, paddingVertical: 10, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: fontSize.label }}>Search again</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 

@@ -331,7 +331,16 @@ serve(async (req) => {
         });
 
         // Fetch offer to get passenger IDs, flight details, and authoritative pricing.
-        const offer = await duffel('GET', `/air/offers/${offerId}`);
+        let offer: any;
+        try {
+          offer = await duffel('GET', `/air/offers/${offerId}`);
+        } catch (err: any) {
+          const msg = (err?.message ?? '').toLowerCase();
+          if (msg.includes('does not exist') || msg.includes('not found') || msg.includes('404')) {
+            throw new Error('Your selected flight offer has expired. Please go back and search for flights again.');
+          }
+          throw err;
+        }
         const offerPaxIds: string[] = (offer.passengers ?? []).map((p: { id: string }) => p.id);
 
         // Passenger type (adult/child/infant) was fixed at search time and must
