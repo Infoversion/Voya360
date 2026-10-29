@@ -4,6 +4,7 @@ import {
   Modal, Alert, ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/auth.store';
 import { supabase } from '@/lib/supabase';
@@ -818,6 +819,24 @@ export default function ProfileScreen() {
             </View>
           ))}
         </SectionCard>
+
+        {/* ── Admin (only visible to admins) ───────────────────────────── */}
+        {profile?.is_admin && (
+          <TouchableOpacity
+            onPress={() => router.push('/admin/contact-queries')}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 10,
+              borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 10,
+              backgroundColor: '#FFF', borderWidth: 1, borderColor: colors.border,
+            }}
+          >
+            <Text style={{ fontSize: 18 }}>🛠️</Text>
+            <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text, flex: 1 }}>
+              Contact queries (admin)
+            </Text>
+            <Text style={{ fontSize: 16, color: colors.textMuted }}>›</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Sign out ──────────────────────────────────────────────── */}
         <TouchableOpacity

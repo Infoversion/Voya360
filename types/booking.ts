@@ -17,6 +17,7 @@ export interface UserProfile {
   dietary_confirmed:   boolean;
   push_token:          string | null;
   avatar_url:          string | null;
+  is_admin:            boolean;
   created_at:          string;
 }
 
@@ -88,6 +89,39 @@ export interface PriceAlert {
   is_active:        boolean;
   triggered_at:     string | null;
   created_at:       string;
+}
+
+export type ContactQueryStatus = 'new' | 'in_progress' | 'resolved';
+
+export interface ContactQueryAttachment {
+  id:           string;
+  query_id:     string;
+  storage_path: string;
+  file_name:    string;
+  content_type: string | null;
+  created_at:   string;
+}
+
+export interface ContactQueryReply {
+  id:            string;
+  query_id:      string;
+  admin_user_id: string | null;
+  message:       string;
+  created_at:    string;
+}
+
+export interface ContactQuery {
+  id:              string;
+  user_id:         string;
+  submitter_name:  string | null;
+  submitter_email: string;
+  subject:         string;
+  message:         string;
+  status:          ContactQueryStatus;
+  created_at:      string;
+  // Populated by nested selects — not always present.
+  contact_query_attachments?: ContactQueryAttachment[];
+  contact_query_replies?:     ContactQueryReply[];
 }
 
 export const SERVICE_FEE_USD = 9.99 as const;
