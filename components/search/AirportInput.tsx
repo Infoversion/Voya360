@@ -8,13 +8,14 @@ import { AirportOption } from '@/store/search.store';
 import { colors, fontSize, spacing } from '@/constants/design';
 
 interface Props {
-  label:       string;
-  value:       AirportOption | null;
-  onChange:    (place: AirportOption) => void;
-  placeholder?: string;
+  label:          string;
+  value:          AirportOption | null;
+  onChange:       (place: AirportOption) => void;
+  placeholder?:   string;
+  rightAccessory?: React.ReactNode;
 }
 
-export function AirportInput({ label, value, onChange, placeholder = 'City or airport' }: Props) {
+export function AirportInput({ label, value, onChange, placeholder = 'City or airport', rightAccessory }: Props) {
   const [query,   setQuery]   = useState('');
   const [focused, setFocused] = useState(false);
 
@@ -33,9 +34,12 @@ export function AirportInput({ label, value, onChange, placeholder = 'City or ai
 
   return (
     <View style={{ marginBottom: 8 }}>
-      <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginBottom: 4 }}>
-        {label}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <Text style={{ fontSize: fontSize.label, color: colors.textMuted }}>
+          {label}
+        </Text>
+        {rightAccessory}
+      </View>
       <View style={{
         borderWidth: 1.5,
         borderColor: focused ? colors.accent : colors.border,

@@ -1,92 +1,29 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useRef } from 'react';
 import { ScrollView, View, Text, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
 import { useAuthStore }   from '@/store/auth.store';
 import { useSearchStore } from '@/store/search.store';
 import { SearchForm }     from '@/components/search/SearchForm';
 import { VoyaCard }       from '@/components/voya/VoyaCard';
 import { useVoya }        from '@/hooks/useVoya';
-import { supabase }       from '@/lib/supabase';
 import { TOP_CORRIDORS }  from '@/constants/corridors';
+import { getAirportByIata } from '@/constants/airports';
 import { colors, fontSize, spacing } from '@/constants/design';
-import type { Booking, PriceHistory } from '@/types/booking';
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function TrendBadge({ current, previous }: { current: number; previous: number | null }) {
-  if (!previous) return null;
-  const pct = ((current - previous) / previous) * 100;
-  if (Math.abs(pct) < 1) return null;
-  const up = pct > 0;
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', gap: 2,
-      backgroundColor: up ? '#FEF2F2' : '#F0FDF4',
-      borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-    }}>
-      <Text style={{ fontSize: 10, color: up ? '#DC2626' : colors.success }}>
-        {up ? '↑' : '↓'} {Math.abs(pct).toFixed(0)}%
-      </Text>
-    </View>
-  );
-}
 
 export default function HomeScreen() {
   const { profile }             = useAuthStore();
   const { setOrigin, setDestination, setIsRoundTrip } = useSearchStore();
   const { observation, dismiss } = useVoya('home');
   const firstName = profile?.full_name?.split(' ')[0];
-
-  const [upcomingBooking, setUpcomingBooking] = useState<Booking | null>(null);
-  const [corridorPrice, setCorridorPrice]     = useState<PriceHistory | null>(null);
-  const [prevPrice, setPrevPrice]             = useState<PriceHistory | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadUpcomingBooking();
-      if (profile?.home_origin && profile?.home_destination) {
-        loadCorridorPrice(profile.home_origin, profile.home_destination);
-      }
-    }, [profile])
-  );
-
-  const loadUpcomingBooking = async () => {
-    const { data } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('status', 'confirmed')
-      .gt('departure_at', new Date().toISOString())
-      .order('departure_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    setUpcomingBooking(data as Booking | null);
-  };
-
-  const loadCorridorPrice = async (origin: string, destination: string) => {
-    const { data } = await supabase
-      .from('price_history')
-      .select('*')
-      .eq('origin', origin)
-      .eq('destination', destination)
-      .eq('cabin_class', 'economy')
-      .order('snapshot_at', { ascending: false })
-      .limit(2);
-    if (data && data.length > 0) {
-      setCorridorPrice(data[0] as PriceHistory);
-      if (data.length > 1) setPrevPrice(data[1] as PriceHistory);
-    }
-  };
+  const scrollRef = useRef<ScrollView>(null);
 
   const quickSearch = (origin: string, destination: string) => {
-    const { airports } = require('@/constants/airports');
-    const o = airports?.find?.((a: any) => a.iata === origin);
-    const d = airports?.find?.((a: any) => a.iata === destination);
+    const o = getAirportByIata(origin);
+    const d = getAirportByIata(destination);
     if (o) setOrigin(o);
     if (d) setDestination(d);
     setIsRoundTrip(false);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   // Pick 6 corridors near the user's home or show top ones
@@ -98,6 +35,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
@@ -114,11 +52,13 @@ export default function HomeScreen() {
                 Book fast · Pay fair · Fly smarter
               </Text>
             </View>
-            <Image
-              source={require('@/assets/logo.png')}
-              style={{ width: 60, height: 60 }}
-              resizeMode="contain"
-            />
+            <View style={{ width: 80, height: 60, position: 'relative' }}>
+              <Image
+                source={require('@/assets/logo.png')}
+                style={{ width: 80, height: 80, position: 'absolute', top: -10, right: 0 }}
+                resizeMode="contain"
+              />
+            </View>
           </View>
 
           {/* Voya insight card */}
@@ -141,84 +81,6 @@ export default function HomeScreen() {
         }}>
           <SearchForm />
         </View>
-
-        {/* ── Upcoming booking strip ─────────────────────────────────── */}
-        {upcomingBooking && (
-          <TouchableOpacity
-            onPress={() => router.push(`/booking/${upcomingBooking.duffel_order_id}`)}
-            style={{
-              marginHorizontal: spacing.pagePadding,
-              marginTop: 20,
-              backgroundColor: `${colors.accent}10`,
-              borderWidth: 1.5,
-              borderColor: `${colors.accent}30`,
-              borderRadius: 14,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              flexDirection: 'row',
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 22, marginRight: 10 }}>✈️</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginBottom: 2 }}>
-                Upcoming flight{upcomingBooking.departure_at ? ` · ${fmtDate(upcomingBooking.departure_at)}` : ''}
-              </Text>
-              <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.text }}>
-                {upcomingBooking.origin} → {upcomingBooking.destination}
-              </Text>
-            </View>
-            <Text style={{ fontSize: 18, color: colors.accent }}>›</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Corridor price widget ──────────────────────────────────── */}
-        {profile?.home_origin && profile?.home_destination && (
-          <View style={{
-            marginHorizontal: spacing.pagePadding,
-            marginTop: 20,
-            borderWidth: 1.5,
-            borderColor: colors.border,
-            borderRadius: 14,
-            padding: 14,
-          }}>
-            <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: colors.textMuted, marginBottom: 8 }}>
-              YOUR CORRIDOR
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: colors.text }}>
-                  {profile.home_origin}
-                  <Text style={{ color: colors.accent }}> → </Text>
-                  {profile.home_destination}
-                </Text>
-                {corridorPrice?.price_usd ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                    <Text style={{ fontSize: fontSize.body, fontWeight: '700', color: colors.accent }}>
-                      from ${corridorPrice.price_usd.toFixed(0)}
-                    </Text>
-                    <TrendBadge current={corridorPrice.price_usd} previous={prevPrice?.price_usd ?? null} />
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: fontSize.label, color: colors.textMuted, marginTop: 4 }}>
-                    Tap to search
-                  </Text>
-                )}
-              </View>
-              <TouchableOpacity
-                onPress={() => quickSearch(profile.home_origin!, profile.home_destination!)}
-                style={{
-                  backgroundColor: colors.accent,
-                  borderRadius: 10,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                }}
-              >
-                <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: '#fff' }}>Search</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
 
         {/* ── Quick route shortcuts ──────────────────────────────────── */}
         {quickRoutes.length > 0 && (

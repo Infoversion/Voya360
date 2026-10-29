@@ -2,12 +2,15 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { useSearchStore } from '@/store/search.store';
+import { useAuthStore } from '@/store/auth.store';
 import { AirportInput }    from './AirportInput';
 import { DatePicker }      from './DatePicker';
 import { PassengerStepper } from './PassengerStepper';
+import { HowItWorksCard }  from './HowItWorksCard';
 import { Button }          from '@/components/ui/Button';
-import { getNearestAirport } from '@/constants/airports';
+import { getNearestAirport, getAirportByIata } from '@/constants/airports';
 import { colors, fontSize, spacing } from '@/constants/design';
 import type { CabinClass } from '@/types/booking';
 
@@ -29,14 +32,17 @@ function CabinDropdown({ value, onChange }: { value: CabinClass; onChange: (v: C
         onPress={() => setOpen(o => !o)}
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 5,
-          backgroundColor: '#F3F4F6', borderRadius: 10,
-          paddingHorizontal: 12, paddingVertical: 6,
+          backgroundColor: colors.accent, borderRadius: 12,
+          paddingHorizontal: 9, paddingVertical: 7,
+          shadowColor: colors.accent, shadowOpacity: 0.3, shadowRadius: 6,
+          shadowOffset: { width: 0, height: 2 }, elevation: 3,
         }}
       >
-        <Text style={{ fontSize: 15, fontWeight: '400', color: colors.text }}>
+        <Text style={{ fontSize: 13 }}>{current.icon}</Text>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>
           {current.label}
         </Text>
-        <Text style={{ fontSize: 10, color: colors.textMuted }}>{open ? '▲' : '▼'}</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={11} color="#fff" />
       </TouchableOpacity>
 
       {/* Floating menu */}
@@ -106,6 +112,19 @@ export function SearchForm() {
     setPassengerCounts, setCabinClass, setIsRoundTrip,
     search, isSearching,
   } = useSearchStore();
+  const { profile } = useAuthStore();
+
+  const savedCorridor = profile?.home_origin && profile?.home_destination
+    ? { origin: profile.home_origin, destination: profile.home_destination }
+    : null;
+
+  const applySavedCorridor = () => {
+    if (!savedCorridor) return;
+    const o = getAirportByIata(savedCorridor.origin);
+    const d = getAirportByIata(savedCorridor.destination);
+    if (o) setOrigin(o);
+    if (d) setDestination(d);
+  };
 
   useEffect(() => {
     if (origin) return;
@@ -131,16 +150,19 @@ export function SearchForm() {
   return (
     <View style={{ padding: spacing.pagePadding }}>
 
+      {/* ── How it works (collapsible help) ─────────────────────────── */}
+      <HowItWorksCard />
+
       {/* ── Row 1: compact trip-type toggle + cabin dropdown ─────────── */}
       <View style={{
-        flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+        justifyContent: 'space-between', rowGap: 8,
         marginBottom: 14, zIndex: 40,
       }}>
         {/* One way / Round trip toggle */}
         <View style={{
           flexDirection: 'row', backgroundColor: '#F3F4F6',
-          borderRadius: 10, padding: 3,
+          borderRadius: 12, padding: 3, gap: 2, flexShrink: 1,
         }}>
           {(['One way', 'Round trip'] as const).map((label, i) => {
             const rt     = i === 1;
@@ -150,19 +172,25 @@ export function SearchForm() {
                 key={label}
                 onPress={() => setIsRoundTrip(rt)}
                 style={{
-                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
-                  backgroundColor: active ? colors.background : 'transparent',
-                  shadowColor:    active ? '#000' : 'transparent',
-                  shadowOpacity:  active ? 0.08 : 0,
-                  shadowRadius:   active ? 4 : 0,
-                  shadowOffset:   { width: 0, height: 1 },
-                  elevation:      active ? 2 : 0,
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  paddingHorizontal: 9, paddingVertical: 7, borderRadius: 9,
+                  backgroundColor: active ? colors.accent : 'transparent',
+                  shadowColor:    active ? colors.accent : 'transparent',
+                  shadowOpacity:  active ? 0.3 : 0,
+                  shadowRadius:   active ? 6 : 0,
+                  shadowOffset:   { width: 0, height: 2 },
+                  elevation:      active ? 3 : 0,
                 }}
               >
+                <Ionicons
+                  name={rt ? 'repeat' : 'arrow-forward'}
+                  size={12}
+                  color={active ? '#fff' : colors.textMuted}
+                />
                 <Text style={{
-                  fontSize: 15,
-                  fontWeight: '400',
-                  color: active ? colors.text : colors.textMuted,
+                  fontSize: 12,
+                  fontWeight: active ? '700' : '500',
+                  color: active ? '#fff' : colors.textMuted,
                 }}>
                   {label}
                 </Text>
@@ -177,7 +205,27 @@ export function SearchForm() {
 
       {/* ── Airport inputs ────────────────────────────────────────────── */}
       <View style={{ position: 'relative', zIndex: 20 }}>
-        <AirportInput label="From" value={origin} onChange={setOrigin} placeholder="Origin city or airport" />
+        <AirportInput
+          label="From"
+          value={origin}
+          onChange={setOrigin}
+          placeholder="Origin city or airport"
+          rightAccessory={savedCorridor && (
+            <TouchableOpacity
+              onPress={applySavedCorridor}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 4,
+                paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+                backgroundColor: `${colors.accent}12`,
+              }}
+            >
+              <Ionicons name="home" size={11} color={colors.accent} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.accent }}>
+                {savedCorridor.origin} → {savedCorridor.destination}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
 
       {/* Swap button — equal padding above and below keeps it centred in the gap */}

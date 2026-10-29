@@ -82,6 +82,10 @@ export function searchAirports(query: string): AirportOption[] {
   ).slice(0, 8);
 }
 
+export function getAirportByIata(iata: string): AirportOption | null {
+  return AIRPORTS.find(a => a.iata === iata.toUpperCase()) ?? null;
+}
+
 // Haversine distance in km
 function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R  = 6371;

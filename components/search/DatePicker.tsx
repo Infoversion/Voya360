@@ -50,15 +50,18 @@ interface MonthGridProps {
   year:        number;
   month:       number;
   today:       Date;
+  startDay?:   number; // first day-of-month to render — lets the current month
+                        // skip past days entirely instead of showing blank
+                        // leading weeks, so today's row is the top row.
   departure:   string | null;
   returnDate:  string | null;
   destination?: string;
   onDay:       (iso: string) => void;
 }
 
-function MonthGrid({ year, month, today, departure, returnDate, destination, onDay }: MonthGridProps) {
+function MonthGrid({ year, month, today, startDay = 1, departure, returnDate, destination, onDay }: MonthGridProps) {
   const yearMonth = `${year}-${pad2(month + 1)}`;
-  const firstDay  = new Date(year, month, 1).getDay();
+  const firstDay  = new Date(year, month, startDay).getDay();
   const totalDays = daysInMonth(year, month);
 
   const holidayMap = useMemo<Record<number, HolidayEntry[]>>(() => {
@@ -74,13 +77,13 @@ function MonthGrid({ year, month, today, departure, returnDate, destination, onD
   const weeks = useMemo<(number | null)[][]>(() => {
     const cells: (number | null)[] = [
       ...Array(firstDay).fill(null),
-      ...Array.from({ length: totalDays }, (_, i) => i + 1),
+      ...Array.from({ length: totalDays - startDay + 1 }, (_, i) => startDay + i),
     ];
     while (cells.length % 7 !== 0) cells.push(null);
     const rows: (number | null)[][] = [];
     for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
     return rows;
-  }, [firstDay, totalDays]);
+  }, [firstDay, totalDays, startDay]);
 
   const depDate = departure  ? new Date(departure  + 'T00:00:00') : null;
   const retDate = returnDate ? new Date(returnDate + 'T00:00:00') : null;
@@ -375,6 +378,7 @@ export function DatePicker({ isRoundTrip, departure, returnDate, onDeparture, on
                   year={year}
                   month={month}
                   today={today}
+                  startDay={year === today.getFullYear() && month === today.getMonth() ? today.getDate() : 1}
                   departure={localDep}
                   returnDate={isRoundTrip ? localRet : null}
                   destination={destination}
