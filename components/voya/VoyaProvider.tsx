@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/auth.store';
 import { useVoyaStore } from '@/store/voya.store';
 import { VoyaObservation, VoyaObservationType, VOYA_SCREEN_MAP } from '@/types/voya';
+import { getActiveEvents } from '@/engine/seasonal-events';
 
 let _idCounter = 0;
 function nextId() { return `voya_${++_idCounter}`; }
@@ -21,6 +22,18 @@ export function VoyaProvider({ children }: { children: React.ReactNode }) {
   const init = async () => {
     setInitializing(true);
     try {
+      // Compute upcoming seasonal events for the user's destination — deduplicated by name.
+      // Only future or currently-active events within 90 days are included.
+      const rawEvents = profile?.home_destination
+        ? getActiveEvents(profile.home_destination, new Date(), 90)
+        : [];
+      const seen = new Set<string>();
+      const upcomingEvents = rawEvents.filter(e => {
+        if (seen.has(e.name)) return false;
+        seen.add(e.name);
+        return true;
+      });
+
       const { data, error } = await supabase.functions.invoke('voya-init', {
         body: {
           homeOrigin:        profile?.home_origin      ?? null,
@@ -28,6 +41,7 @@ export function VoyaProvider({ children }: { children: React.ReactNode }) {
           preferredAirlines: profile?.preferred_airlines ?? [],
           savedTravelerCount: 0,
           dietaryPreference: profile?.dietary_preference ?? null,
+          upcomingEvents,
         },
       });
 
