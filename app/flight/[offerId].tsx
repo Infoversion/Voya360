@@ -5,11 +5,10 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { DuffelOffer, DuffelSegment } from '@/types/duffel';
 import { useSearchStore }  from '@/store/search.store';
 import { useBookingStore } from '@/store/booking.store';
-import { getOffer, getSeatMaps, getAvailableServices, SeatMap, BaggageService } from '@/lib/duffel';
+import { getOffer, getAvailableServices, BaggageService } from '@/lib/duffel';
 import { Button }          from '@/components/ui/Button';
 import { AirlineLogo }    from '@/components/ui/AirlineLogo';
 import { PageLogo }       from '@/components/ui/PageLogo';
-import { SeatMapSelector } from '@/components/booking/SeatMapSelector';
 import { VoyaCard }         from '@/components/voya/VoyaCard';
 import { useVoya }         from '@/hooks/useVoya';
 import { formatDuration, getIncludedCheckedBags, getFareType } from '@/engine/total-cost';
@@ -180,15 +179,13 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
 export default function FlightReviewScreen() {
   const { offerId }       = useLocalSearchParams<{ offerId: string }>();
   const { offers }        = useSearchStore();
-  const { setOffer, passengers, selectedSeats, setSeat, selectedServices, setSelectedServices } = useBookingStore();
+  const { setOffer, passengers, selectedServices, setSelectedServices } = useBookingStore();
 
   const [offer, setLocalOffer] = useState<DuffelOffer | null>(
     () => offers?.find(o => o.id === offerId) ?? null,
   );
   const [loading, setLoading]           = useState(!offer);
   const [error, setError]               = useState<string | null>(null);
-  const [seatMaps, setSeatMaps]         = useState<SeatMap[]>([]);
-  const [loadingSeats, setLoadingSeats] = useState(false);
   const [baggageServices, setBaggageServices] = useState<BaggageService[]>([]);
 
   useEffect(() => {
@@ -200,11 +197,6 @@ export default function FlightReviewScreen() {
 
   useEffect(() => {
     if (!offer) return;
-    setLoadingSeats(true);
-    getSeatMaps(offer.id)
-      .then(setSeatMaps)
-      .catch(() => setSeatMaps([]))
-      .finally(() => setLoadingSeats(false));
     getAvailableServices(offer.id)
       .then(setBaggageServices)
       .catch(() => setBaggageServices([]));
@@ -370,27 +362,6 @@ export default function FlightReviewScreen() {
             </View>
           );
         })}
-
-        {/* ── SEAT SELECTION ── */}
-        <View style={{
-          marginHorizontal: spacing.pagePadding, marginTop: 16,
-          backgroundColor: colors.background,
-          borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
-        }}>
-          <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>SEAT SELECTION</Text>
-          </View>
-          <View style={{ padding: 14 }}>
-            <SeatMapSelector
-              seatMaps={seatMaps}
-              passengers={passengers}
-              selected={selectedSeats}
-              duffelPassengerIds={(offer.passengers ?? []).map(p => p.id)}
-              onSelect={setSeat}
-              loading={loadingSeats}
-            />
-          </View>
-        </View>
 
         {/* ── BAGGAGE ── */}
         {/* What's included from the offer */}

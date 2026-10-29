@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,8 @@ import { useBookingStore } from '@/store/booking.store';
 import { useSearchStore } from '@/store/search.store';
 import { useBookingFlow } from '@/hooks/useBookingFlow';
 import { PriceSummary } from '@/components/booking/PriceSummary';
+import { SeatMapSelector } from '@/components/booking/SeatMapSelector';
+import { getSeatMaps, SeatMap } from '@/lib/duffel';
 import { AirlineLogo } from '@/components/ui/AirlineLogo';
 import { VoyaCard } from '@/components/voya/VoyaCard';
 import { useVoya } from '@/hooks/useVoya';
@@ -44,15 +46,26 @@ function CheckRow({ checked, onToggle, label }: { checked: boolean; onToggle: ()
 }
 
 export default function ConfirmScreen() {
-  const { selectedOffer, passengers, selectedSeats, isCreatingIntent, isConfirming, error, updatePassenger } = useBookingStore();
+  const { selectedOffer, passengers, selectedSeats, setSeat, isCreatingIntent, isConfirming, error, updatePassenger } = useBookingStore();
   const { bagCount } = useSearchStore();
   const { startPayment } = useBookingFlow();
   const { observation, dismiss } = useVoya('confirm');
 
+  const [seatMaps,      setSeatMaps]      = useState<SeatMap[]>([]);
+  const [loadingSeats,  setLoadingSeats]  = useState(false);
   const [flightChecked,     setFlightChecked]     = useState(false);
   const [passengersChecked, setPassengersChecked] = useState(false);
   const [checkError,        setCheckError]        = useState(false);
   const [phoneError,        setPhoneError]        = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedOffer) return;
+    setLoadingSeats(true);
+    getSeatMaps(selectedOffer.id)
+      .then(setSeatMaps)
+      .catch(() => setSeatMaps([]))
+      .finally(() => setLoadingSeats(false));
+  }, [selectedOffer?.id]);
 
   if (!selectedOffer) {
     return (
@@ -404,6 +417,24 @@ export default function ConfirmScreen() {
           />
         </View>
 
+        {/* Seat selection — placed after passengers so names populate the tabs */}
+        <View style={{
+          borderWidth: 1.5, borderColor: colors.border,
+          borderRadius: 14, padding: 16, marginBottom: 16,
+        }}>
+          <Text style={{ fontSize: fontSize.label, fontWeight: '700', color: colors.textMuted, marginBottom: 12 }}>
+            SEAT SELECTION
+          </Text>
+          <SeatMapSelector
+            seatMaps={seatMaps}
+            passengers={passengers}
+            selected={selectedSeats}
+            duffelPassengerIds={(selectedOffer.passengers ?? []).map(p => p.id)}
+            onSelect={setSeat}
+            loading={loadingSeats}
+          />
+        </View>
+
         {/* Phone validation error */}
         {phoneError && (
           <View style={{
@@ -463,7 +494,7 @@ export default function ConfirmScreen() {
           bagCount={bagCount}
           label="Confirm & Pay"
           loading={loading}
-          disabled={loading}
+          disabled={loading || !allChecked}
           onPress={handlePay}
         />
       </ScrollView>

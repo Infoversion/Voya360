@@ -212,36 +212,40 @@ export function SeatMapSelector({ seatMaps, passengers, selected, duffelPassenge
         {cabin.cabin_class.replace(/_/g, ' ').toUpperCase()}
       </Text>
 
-      {/* Seat grid */}
+      {/* Seat grid — horizontal scroll so wide planes (A380, 777) don't clip */}
       <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled>
-        {cabin.rows.map((row, ri) => (
-          <View key={ri} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
-            {row.sections.map((section, si) => (
-              <View key={si} style={{ flexDirection: 'row' }}>
-                {section.elements.map((el, ei) => {
-                  if (el.type === 'seat' || el.type === 'empty') {
-                    return (
-                      <SeatButton
-                        key={ei}
-                        el={el}
-                        segmentId={segId}
-                        duffelPaxId={duffelId}
-                        selected={selected}
-                        onPress={(serviceId, designator) =>
-                          onSelect(segId, duffelId, serviceId ? { serviceId, designator } : null)
-                        }
-                      />
-                    );
-                  }
-                  // aisle gap
-                  return <View key={ei} style={{ width: 12 }} />;
-                })}
-                {/* Gap between sections */}
-                {si < row.sections.length - 1 && <View style={{ width: 10 }} />}
+        <ScrollView horizontal showsHorizontalScrollIndicator nestedScrollEnabled>
+          <View>
+            {cabin.rows.map((row, ri) => (
+              <View key={ri} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                {row.sections.map((section, si) => (
+                  <View key={si} style={{ flexDirection: 'row' }}>
+                    {section.elements.map((el, ei) => {
+                      if (el.type === 'seat' || el.type === 'empty') {
+                        return (
+                          <SeatButton
+                            key={ei}
+                            el={el}
+                            segmentId={segId}
+                            duffelPaxId={duffelId}
+                            selected={selected}
+                            onPress={(serviceId, designator) =>
+                              onSelect(segId, duffelId, serviceId ? { serviceId, designator } : null)
+                            }
+                          />
+                        );
+                      }
+                      // aisle gap
+                      return <View key={ei} style={{ width: 12 }} />;
+                    })}
+                    {/* Gap between sections */}
+                    {si < row.sections.length - 1 && <View style={{ width: 10 }} />}
+                  </View>
+                ))}
               </View>
             ))}
           </View>
-        ))}
+        </ScrollView>
       </ScrollView>
 
       {/* Legend */}
