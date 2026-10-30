@@ -178,7 +178,7 @@ function SegmentBlock({ seg, layoverMins, isLast }: {
 // ── Main screen ─────────────────────────────────────────────────────────────
 export default function FlightReviewScreen() {
   const { offerId }       = useLocalSearchParams<{ offerId: string }>();
-  const { offers }        = useSearchStore();
+  const { offers, bagCount, setBagCount } = useSearchStore();
   const { setOffer, passengers, selectedServices, setSelectedServices } = useBookingStore();
 
   const [offer, setLocalOffer] = useState<DuffelOffer | null>(
@@ -482,8 +482,55 @@ export default function FlightReviewScreen() {
           </View>
         )}
 
-        {/* Voya bag tip */}
-        {bagTip && (
+        {/* Bag count stepper — shown when airline has no Duffel baggage services */}
+        {baggageServices.length === 0 && includedBags === 0 && (
+          <View style={{
+            marginHorizontal: spacing.pagePadding, marginTop: 8,
+            backgroundColor: colors.background,
+            borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: 'hidden',
+          }}>
+            <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.8 }}>CHECKED BAGS</Text>
+            </View>
+            <View style={{ padding: 14 }}>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 12, lineHeight: 18 }}>
+                This airline doesn't offer pre-paid bags through Voya360. Adjust your bag count for an accurate price estimate — fees are paid directly at check-in.
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>Checked bags</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>~$65/bag estimate · paid at airport</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <TouchableOpacity
+                    onPress={() => setBagCount(Math.max(0, bagCount - 1))}
+                    disabled={bagCount === 0}
+                    style={{
+                      width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: bagCount === 0 ? '#F3F4F6' : `${colors.accent}20`,
+                    }}
+                  >
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: bagCount === 0 ? '#D1D5DB' : colors.accent }}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text, minWidth: 16, textAlign: 'center' }}>{bagCount}</Text>
+                  <TouchableOpacity
+                    onPress={() => setBagCount(Math.min(9, bagCount + 1))}
+                    disabled={bagCount >= 9}
+                    style={{
+                      width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: bagCount >= 9 ? '#F3F4F6' : colors.accent,
+                    }}
+                  >
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: bagCount >= 9 ? '#D1D5DB' : '#fff' }}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Voya bag tip — only when bags ARE included or services are available */}
+        {bagTip && baggageServices.length > 0 && (
           <View style={{
             marginHorizontal: spacing.pagePadding, marginTop: 4,
             backgroundColor: '#FFF7ED', borderRadius: 10,
