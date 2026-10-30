@@ -120,12 +120,14 @@ serve(async (req) => {
       gender:       p.gender,
       email:        p.email,
       phone_number: p.phone,
-      identity_documents: [{
-        unique_identifier:    p.passportNumber,
-        issuing_country_code: p.passportCountry,
-        expires_on:           p.passportExpiry,
-        type:                 'passport',
-      }],
+      ...(p.passportExpiry ? {
+        identity_documents: [{
+          unique_identifier:    p.passportNumber,
+          issuing_country_code: p.passportCountry,
+          expires_on:           p.passportExpiry,
+          type:                 'passport',
+        }],
+      } : {}),
     }));
 
     // Voya360 pays Duffel from its pre-funded Duffel account balance.
