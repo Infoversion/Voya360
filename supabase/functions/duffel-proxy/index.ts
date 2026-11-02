@@ -694,6 +694,140 @@ serve(async (req) => {
         break;
       }
 
+      // ── booking_confirm ──────────────────────────────────────────────────────
+      // Called by the client immediately after stripe.confirmPayment() succeeds.
+      // Verifies the payment with Stripe, then creates the Duffel order and
+      // booking row. Idempotent: if the webhook already ran, returns the
+      // existing booking without touching Duffel again.
+      case 'booking_confirm': {
+        const { intentId } = payload as { intentId: string };
+
+        const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
+        if (!stripeKey) {
+          throw new Error('Payment confirmation not available in sandbox mode.');
+        }
+
+        const admin = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        );
+
+        // Idempotency: webhook may have already created the booking row.
+        const { data: existing } = await admin
+          .from('bookings')
+          .select('duffel_order_id, pnr')
+          .eq('stripe_payment_intent_id', intentId)
+          .maybeSingle();
+
+        if (existing) {
+          result = { orderId: existing.duffel_order_id, pnr: existing.pnr ?? '' };
+          break;
+        }
+
+        // Verify the payment intent status with Stripe.
+        const stripe = new Stripe(stripeKey, {
+          apiVersion:  '2024-04-10',
+          httpClient:  Stripe.createFetchHttpClient(),
+        });
+
+        const intent = await stripe.paymentIntents.retrieve(intentId);
+        if (intent.status !== 'succeeded' && intent.status !== 'processing') {
+          throw new Error(`Payment not completed (status: ${intent.status}). Please try again.`);
+        }
+
+        // Get stored passenger + offer data.
+        const { data: pending, error: pendingErr } = await admin
+          .from('pending_bookings')
+          .select('*')
+          .eq('stripe_intent', intentId)
+          .single();
+
+        if (pendingErr || !pending) {
+          throw new Error(
+            'Booking data not found. Your payment was captured — please contact support with reference: ' + intentId,
+          );
+        }
+
+        const passengers = pending.passengers_json as Array<{
+          givenName:       string;
+          familyName:      string;
+          dateOfBirth:     string;
+          passportNumber:  string;
+          passportCountry: string;
+          passportExpiry:  string;
+          gender:          string;
+          email:           string;
+          phone:           string;
+        }>;
+
+        // Fetch fresh offer for authoritative pricing and passenger IDs.
+        const offer = await duffel('GET', `/air/offers/${pending.offer_id}`);
+        const offerPaxIds: string[] = (offer.passengers ?? []).map((p: { id: string }) => p.id);
+
+        const duffelPassengers = passengers.map((p, i) => ({
+          id:           offerPaxIds[i] ?? '',
+          title:        'mr',
+          given_name:   p.givenName,
+          family_name:  p.familyName,
+          born_on:      p.dateOfBirth,
+          gender:       p.gender,
+          email:        p.email,
+          phone_number: p.phone,
+          ...(p.passportExpiry ? {
+            identity_documents: [{
+              unique_identifier:    p.passportNumber,
+              issuing_country_code: p.passportCountry,
+              expires_on:           p.passportExpiry,
+              type:                 'passport',
+            }],
+          } : {}),
+        }));
+
+        const order = await duffel('POST', '/air/orders', {
+          type:            'instant',
+          selected_offers: [pending.offer_id],
+          passengers:      duffelPassengers,
+          payments:        [{
+            type:     'balance',
+            currency: (pending.currency as string).toUpperCase(),
+            amount:   offer.total_amount,
+          }],
+        });
+
+        const baseFare   = parseFloat(offer.total_amount ?? '0');
+        const extraBags  = Math.max(0, (pending.bag_count as number) - getIncludedBags(offer));
+        const baggageFee = extraBags * 65;
+        const totalUsd   = baseFare + SERVICE_FEE_USD + baggageFee;
+
+        const slice    = offer.slices[0];
+        const firstSeg = slice.segments[0];
+        const lastSeg  = slice.segments[slice.segments.length - 1];
+
+        await admin.from('bookings').insert({
+          user_id:                  pending.user_id,
+          duffel_order_id:          order.id,
+          pnr:                      order.booking_reference,
+          status:                   'confirmed',
+          origin:                   slice.origin.iata_code,
+          destination:              slice.destination.iata_code,
+          departure_at:             firstSeg.departing_at,
+          arrival_at:               lastSeg.arriving_at,
+          airline:                  firstSeg.marketing_carrier.iata_code,
+          cabin_class:              offer.passengers?.[0]?.cabin_class_marketing_name?.toLowerCase() ?? 'economy',
+          passenger_count:          passengers.length,
+          base_fare_usd:            baseFare,
+          service_fee_usd:          SERVICE_FEE_USD,
+          baggage_fee_usd:          baggageFee,
+          total_usd:                totalUsd,
+          stripe_payment_intent_id: intentId,
+        });
+
+        await admin.from('pending_bookings').delete().eq('id', pending.id);
+
+        result = { orderId: order.id, pnr: order.booking_reference };
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
