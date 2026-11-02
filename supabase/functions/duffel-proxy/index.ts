@@ -142,14 +142,17 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } },
     );
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { action, ...payload } = await req.json();
+
+    // These actions are read-only and safe for unauthenticated guests
+    const GUEST_ACTIONS = new Set(['offer_requests_create', 'offer_get']);
+    if (!GUEST_ACTIONS.has(action) && !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const { action, ...payload } = await req.json();
     let result: unknown;
 
     switch (action) {
