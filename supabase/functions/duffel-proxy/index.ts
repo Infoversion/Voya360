@@ -783,16 +783,50 @@ serve(async (req) => {
           } : {}),
         }));
 
-        const order = await duffel('POST', '/air/orders', {
-          type:            'instant',
-          selected_offers: [pending.offer_id],
-          passengers:      duffelPassengers,
-          payments:        [{
-            type:     'balance',
-            currency: (pending.currency as string).toUpperCase(),
-            amount:   offer.total_amount,
-          }],
-        });
+        let order: any;
+        try {
+          order = await duffel('POST', '/air/orders', {
+            type:            'instant',
+            selected_offers: [pending.offer_id],
+            passengers:      duffelPassengers,
+            payments:        [{
+              type:     'balance',
+              currency: (pending.currency as string).toUpperCase(),
+              amount:   offer.total_amount,
+            }],
+          });
+        } catch (duffelErr: any) {
+          const msg = (duffelErr?.message ?? '').toLowerCase();
+          const alreadyBooked =
+            msg.includes('already been booked') ||
+            msg.includes('already booked') ||
+            msg.includes('offer request that has already been booked');
+
+          if (alreadyBooked) {
+            // Scenario A: webhook won the race and inserted the booking row just
+            // after our idempotency check at the top. Re-check now.
+            const { data: raceRow } = await admin
+              .from('bookings')
+              .select('duffel_order_id, pnr')
+              .eq('stripe_payment_intent_id', intentId)
+              .maybeSingle();
+
+            if (raceRow) {
+              result = { orderId: raceRow.duffel_order_id, pnr: raceRow.pnr ?? '' };
+              break;
+            }
+
+            // Scenario B: a previous payment attempt for this offer already
+            // created an order. Payment was captured — check My Bookings.
+            throw new Error(
+              'This flight has already been booked from a previous payment. ' +
+              'Open "My Bookings" to see your confirmed itinerary, or contact support ' +
+              'with payment reference: ' + intentId,
+            );
+          }
+
+          throw duffelErr;
+        }
 
         const baseFare   = parseFloat(offer.total_amount ?? '0');
         const extraBags  = Math.max(0, (pending.bag_count as number) - getIncludedBags(offer));

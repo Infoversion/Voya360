@@ -131,16 +131,33 @@ serve(async (req) => {
     }));
 
     // Voya360 pays Duffel from its pre-funded Duffel account balance.
-    const order = await duffel('POST', '/air/orders', {
-      type:            'instant',
-      selected_offers: [pending.offer_id],
-      passengers:      duffelPassengers,
-      payments:        [{
-        type:     'balance',
-        currency: (pending.currency as string).toUpperCase(),
-        amount:   offer.total_amount,
-      }],
-    });
+    let order: any;
+    try {
+      order = await duffel('POST', '/air/orders', {
+        type:            'instant',
+        selected_offers: [pending.offer_id],
+        passengers:      duffelPassengers,
+        payments:        [{
+          type:     'balance',
+          currency: (pending.currency as string).toUpperCase(),
+          amount:   offer.total_amount,
+        }],
+      });
+    } catch (duffelErr: any) {
+      const msg = (duffelErr?.message ?? '').toLowerCase();
+      const alreadyBooked =
+        msg.includes('already been booked') ||
+        msg.includes('already booked') ||
+        msg.includes('offer request that has already been booked');
+
+      if (alreadyBooked) {
+        // booking_confirm raced us and already created the order — this webhook
+        // firing is redundant. Return 200 so Stripe stops retrying.
+        console.log('Offer already booked for intent', intent.id, '— likely created by booking_confirm race.');
+        return new Response('ok', { status: 200 });
+      }
+      throw duffelErr;
+    }
 
     // Compute costs from authoritative Duffel data, not client-sent values.
     const baseFare    = parseFloat(offer.total_amount ?? '0');
