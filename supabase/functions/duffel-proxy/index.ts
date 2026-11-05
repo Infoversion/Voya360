@@ -464,6 +464,55 @@ serve(async (req) => {
         }
 
         // ── Production: create Stripe PI + save pending booking ─────────
+
+        // Service-role client needed for pending_bookings (bypasses RLS).
+        const admin = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+        );
+
+        // ── Early duplicate guards (before any payment is initiated) ─────
+        // Guard 1: Is there already an in-progress payment for this exact offer?
+        // Catches re-submissions with the same offer ID (e.g. browser back + retry).
+        const { data: inProgressPending } = await admin
+          .from('pending_bookings')
+          .select('stripe_intent, created_at')
+          .eq('offer_id', offerId)
+          .maybeSingle();
+
+        if (inProgressPending) {
+          throw new Error(
+            'A payment for this flight is already in progress. ' +
+            'If you recently completed a payment, please check "My Bookings" ' +
+            'for your confirmation. Otherwise, start a new search.',
+          );
+        }
+
+        // Guard 2: Does the user already have a confirmed booking for this flight?
+        // Catches Duffel sandbox determinism (same route/date → same offer IDs)
+        // and genuine duplicate booking attempts.
+        const slice0     = offer.slices?.[0];
+        const departing0 = slice0?.segments?.[0]?.departing_at;
+        if (slice0 && departing0) {
+          const { data: dupBooking } = await admin
+            .from('bookings')
+            .select('duffel_order_id, pnr')
+            .eq('user_id', user.id)
+            .eq('origin', slice0.origin.iata_code)
+            .eq('destination', slice0.destination.iata_code)
+            .eq('departure_at', departing0)
+            .eq('status', 'confirmed')
+            .maybeSingle();
+
+          if (dupBooking) {
+            throw new Error(
+              `You already have a confirmed booking for this flight (reference: ${dupBooking.pnr}). ` +
+              `Open "My Bookings" to view your itinerary.`,
+            );
+          }
+        }
+        // ────────────────────────────────────────────────────────────────
+
         const stripe = new Stripe(stripeKey, {
           apiVersion:  '2024-04-10',
           httpClient:  Stripe.createFetchHttpClient(),
@@ -482,12 +531,6 @@ serve(async (req) => {
           // Only non-PII identifiers in Stripe metadata — passport data stays in pending_bookings.
           metadata: { user_id: user.id, offer_id: offerId },
         });
-
-        // Service-role client to write pending_bookings (bypasses RLS).
-        const admin = createClient(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-        );
 
         await admin.from('pending_bookings').insert({
           user_id:         user.id,
@@ -816,7 +859,29 @@ serve(async (req) => {
               break;
             }
 
-            // Scenario B: a previous payment attempt for this offer already
+            // Scenario B: Duffel sandbox determinism — same route/date returns
+            // same offer IDs. A prior booking consumed this offer; look up the
+            // existing confirmed booking by flight details so we can return it.
+            const offerSlice     = offer.slices?.[0];
+            const offerDeparting = offerSlice?.segments?.[0]?.departing_at;
+            if (offerSlice && offerDeparting) {
+              const { data: flightMatch } = await admin
+                .from('bookings')
+                .select('duffel_order_id, pnr')
+                .eq('user_id', pending.user_id)
+                .eq('origin', offerSlice.origin.iata_code)
+                .eq('destination', offerSlice.destination.iata_code)
+                .eq('departure_at', offerDeparting)
+                .eq('status', 'confirmed')
+                .maybeSingle();
+
+              if (flightMatch) {
+                result = { orderId: flightMatch.duffel_order_id, pnr: flightMatch.pnr ?? '' };
+                break;
+              }
+            }
+
+            // Scenario C: a previous payment attempt for this offer already
             // created an order. Payment was captured — check My Bookings.
             throw new Error(
               'This flight has already been booked from a previous payment. ' +
