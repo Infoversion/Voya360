@@ -472,12 +472,18 @@ serve(async (req) => {
         );
 
         // ── Early duplicate guards (before any payment is initiated) ─────
-        // Guard 1: Is there already an in-progress payment for this exact offer?
-        // Catches re-submissions with the same offer ID (e.g. browser back + retry).
+        // Guard 1: Is there already a *recent* in-progress payment for this
+        // offer by this user? Use a 30-minute window — Stripe PIs expire then
+        // anyway, and older rows are stale (failed/abandoned attempts).
+        // Scoped to user.id so Duffel sandbox determinism (same offer IDs for
+        // same route/date across users) doesn't create false conflicts.
+        const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
         const { data: inProgressPending } = await admin
           .from('pending_bookings')
           .select('stripe_intent, created_at')
           .eq('offer_id', offerId)
+          .eq('user_id', user.id)
+          .gte('created_at', thirtyMinsAgo)
           .maybeSingle();
 
         if (inProgressPending) {
@@ -487,6 +493,14 @@ serve(async (req) => {
             'for your confirmation. Otherwise, start a new search.',
           );
         }
+
+        // Clean up any stale rows for this user+offer so they don't accumulate.
+        await admin
+          .from('pending_bookings')
+          .delete()
+          .eq('offer_id', offerId)
+          .eq('user_id', user.id)
+          .lt('created_at', thirtyMinsAgo);
 
         // Guard 2: Does the user already have a confirmed booking for this flight?
         // Catches Duffel sandbox determinism (same route/date → same offer IDs)
