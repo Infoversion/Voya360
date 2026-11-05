@@ -869,6 +869,7 @@ serve(async (req) => {
               .maybeSingle();
 
             if (raceRow) {
+              await admin.from('pending_bookings').delete().eq('id', pending.id);
               result = { orderId: raceRow.duffel_order_id, pnr: raceRow.pnr ?? '' };
               break;
             }
@@ -890,13 +891,61 @@ serve(async (req) => {
                 .maybeSingle();
 
               if (flightMatch) {
+                await admin.from('pending_bookings').delete().eq('id', pending.id);
                 result = { orderId: flightMatch.duffel_order_id, pnr: flightMatch.pnr ?? '' };
                 break;
               }
             }
 
-            // Scenario C: a previous payment attempt for this offer already
-            // created an order. Payment was captured — check My Bookings.
+            // Scenario B.5: booking_confirm or stripe-webhook created the Duffel
+            // order but crashed before inserting the bookings row. Search recent
+            // orders to recover the missing order and repair the DB gap.
+            try {
+              const recentOrders = await duffel('GET', '/air/orders?limit=50') as any[];
+              if (Array.isArray(recentOrders)) {
+                const tOrigin = offer.slices?.[0]?.origin?.iata_code;
+                const tDest   = offer.slices?.[0]?.destination?.iata_code;
+                const tDep    = offer.slices?.[0]?.segments?.[0]?.departing_at;
+                const found   = recentOrders.find((o: any) => {
+                  const s = o.slices?.[0];
+                  return s?.origin?.iata_code === tOrigin
+                      && s?.destination?.iata_code === tDest
+                      && s?.segments?.[0]?.departing_at === tDep;
+                });
+                if (found) {
+                  const fSlice    = found.slices[0];
+                  const fFirst    = fSlice.segments[0];
+                  const fLast     = fSlice.segments[fSlice.segments.length - 1];
+                  const baseFare  = parseFloat(offer.total_amount ?? '0');
+                  const extraBags = Math.max(0, (pending.bag_count as number) - getIncludedBags(offer));
+                  const baggageFee = extraBags * 65;
+                  await admin.from('bookings').upsert({
+                    user_id:                  pending.user_id,
+                    duffel_order_id:          found.id,
+                    pnr:                      found.booking_reference,
+                    status:                   'confirmed',
+                    origin:                   fSlice.origin.iata_code,
+                    destination:              fSlice.destination.iata_code,
+                    departure_at:             fFirst.departing_at,
+                    arrival_at:               fLast.arriving_at,
+                    airline:                  fFirst.marketing_carrier?.iata_code,
+                    cabin_class:              found.passengers?.[0]?.cabin_class_marketing_name?.toLowerCase() ?? 'economy',
+                    passenger_count:          passengers.length,
+                    base_fare_usd:            baseFare,
+                    service_fee_usd:          SERVICE_FEE_USD,
+                    baggage_fee_usd:          baggageFee,
+                    total_usd:                baseFare + SERVICE_FEE_USD + baggageFee,
+                    stripe_payment_intent_id: intentId,
+                  }, { onConflict: 'duffel_order_id', ignoreDuplicates: true });
+                  await admin.from('pending_bookings').delete().eq('id', pending.id);
+                  result = { orderId: found.id, pnr: found.booking_reference };
+                  break;
+                }
+              }
+            } catch { /* fall through to Scenario C */ }
+
+            // Scenario C: order not found in Duffel either. Payment was captured
+            // but we cannot recover — user must contact support.
             throw new Error(
               'This flight has already been booked from a previous payment. ' +
               'Open "My Bookings" to see your confirmed itinerary, or contact support ' +
